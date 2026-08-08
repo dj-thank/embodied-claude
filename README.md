@@ -163,6 +163,11 @@ cp .env.example .env
 # ELEVENLABS_PULSE_SERVER=unix:/mnt/wslg/PulseServer
 ```
 
+go2rtc の自動起動を使う場合、未指定の `GO2RTC_BIN` はversionとSHA-256を
+固定したmanaged binaryとして取得・検証される。任意の既存binaryを使う場合は
+`GO2RTC_BIN` に明示的なpathを設定する。詳細な環境変数は
+`elevenlabs-t2s-mcp/.env.example` を参照。
+
 #### system-temperature-mcp(体温感覚)
 
 ```bash
