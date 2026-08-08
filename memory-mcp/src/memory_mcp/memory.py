@@ -273,7 +273,7 @@ class MemoryStore:
         self._collection: chromadb.Collection | None = None  # claude_memories
         self._episodes_collection: chromadb.Collection | None = None  # Phase 4
         self._lock = asyncio.Lock()
-        self._access_lock = asyncio.Lock()
+        self._metadata_lock = asyncio.Lock()
         # Phase 4: 作業記憶バッファ
         self._working_memory = WorkingMemoryBuffer(capacity=20)
         # Phase 6: 連想・統合エンジン
@@ -638,7 +638,7 @@ class MemoryStore:
         if not unique_ids:
             return
 
-        async with self._access_lock:
+        async with self._metadata_lock:
             collection = self._ensure_connected()
             results = await asyncio.to_thread(collection.get, ids=unique_ids)
             result_ids = results.get("ids", []) if results else []
@@ -720,6 +720,15 @@ class MemoryStore:
             source_id: リンク元の記憶ID
             target_id: リンク先の記憶ID
         """
+        async with self._metadata_lock:
+            await self._add_bidirectional_link_unlocked(source_id, target_id)
+
+    async def _add_bidirectional_link_unlocked(
+        self,
+        source_id: str,
+        target_id: str,
+    ) -> None:
+        """Add a bidirectional link while the caller holds the metadata lock."""
         collection = self._ensure_connected()
 
         # 両方の記憶のメタデータを取得
@@ -996,26 +1005,27 @@ class MemoryStore:
             memory_id: 更新する記憶のID
             episode_id: 設定するエピソードID
         """
-        collection = self._ensure_connected()
+        async with self._metadata_lock:
+            collection = self._ensure_connected()
 
-        # 既存のメタデータを取得
-        result = await asyncio.to_thread(
-            collection.get,
-            ids=[memory_id],
-        )
+            # 既存のメタデータを取得
+            result = await asyncio.to_thread(
+                collection.get,
+                ids=[memory_id],
+            )
 
-        if not result or not result.get("ids"):
-            raise ValueError(f"Memory not found: {memory_id}")
+            if not result or not result.get("ids"):
+                raise ValueError(f"Memory not found: {memory_id}")
 
-        metadata = result["metadatas"][0] if result.get("metadatas") else {}
-        metadata["episode_id"] = episode_id
+            metadata = result["metadatas"][0] if result.get("metadatas") else {}
+            metadata["episode_id"] = episode_id
 
-        # メタデータを更新
-        await asyncio.to_thread(
-            collection.update,
-            ids=[memory_id],
-            metadatas=[metadata],
-        )
+            # メタデータを更新
+            await asyncio.to_thread(
+                collection.update,
+                ids=[memory_id],
+                metadatas=[metadata],
+            )
 
     async def search_important_memories(
         self,
@@ -1111,44 +1121,41 @@ class MemoryStore:
             link_type: リンクタイプ ("caused_by", "leads_to", "related", "similar")
             note: リンクの説明(任意)
         """
-        collection = self._ensure_connected()
+        async with self._metadata_lock:
+            collection = self._ensure_connected()
+            requested_ids = list(dict.fromkeys([source_id, target_id]))
+            results = await asyncio.to_thread(collection.get, ids=requested_ids)
+            result_ids = results.get("ids", []) if results else []
+            metadatas = results.get("metadatas", []) if results else []
+            metadata_by_id = {
+                memory_id: metadatas[index] if index < len(metadatas) else {}
+                for index, memory_id in enumerate(result_ids)
+            }
 
-        # ソース記憶を取得
-        source_memory = await self.get_by_id(source_id)
-        if source_memory is None:
-            raise ValueError(f"Source memory not found: {source_id}")
+            if source_id not in metadata_by_id:
+                raise ValueError(f"Source memory not found: {source_id}")
+            if target_id not in metadata_by_id:
+                raise ValueError(f"Target memory not found: {target_id}")
 
-        # ターゲット記憶が存在するか確認
-        target_memory = await self.get_by_id(target_id)
-        if target_memory is None:
-            raise ValueError(f"Target memory not found: {target_id}")
+            metadata = dict(metadata_by_id[source_id])
+            existing_links = list(_parse_links(metadata.get("links", "")))
+            if any(
+                link.target_id == target_id and link.link_type == link_type
+                for link in existing_links
+            ):
+                return
 
-        # 新しいリンクを作成
-        new_link = MemoryLink(
-            target_id=target_id,
-            link_type=link_type,
-            created_at=datetime.now().isoformat(),
-            note=note,
-        )
-
-        # 既存のリンクに追加(重複チェック)
-        existing_links = list(source_memory.links)
-        for link in existing_links:
-            if link.target_id == target_id and link.link_type == link_type:
-                return  # 既に同じリンクが存在
-
-        updated_links = tuple(existing_links + [new_link])
-
-        # メタデータを更新
-        results = await asyncio.to_thread(
-            collection.get,
-            ids=[source_id],
-        )
-
-        if results and results.get("metadatas"):
-            metadata = results["metadatas"][0]
-            metadata["links"] = json.dumps([link.to_dict() for link in updated_links])
-
+            existing_links.append(
+                MemoryLink(
+                    target_id=target_id,
+                    link_type=link_type,
+                    created_at=datetime.now().isoformat(),
+                    note=note,
+                )
+            )
+            metadata["links"] = json.dumps(
+                [link.to_dict() for link in existing_links]
+            )
             await asyncio.to_thread(
                 collection.update,
                 ids=[source_id],
@@ -1215,15 +1222,20 @@ class MemoryStore:
 
     async def update_memory_fields(self, memory_id: str, **fields: Any) -> bool:
         """記憶メタデータの部分更新."""
-        collection = self._ensure_connected()
-        result = await asyncio.to_thread(collection.get, ids=[memory_id])
-        if not result or not result.get("ids"):
-            return False
+        async with self._metadata_lock:
+            collection = self._ensure_connected()
+            result = await asyncio.to_thread(collection.get, ids=[memory_id])
+            if not result or not result.get("ids"):
+                return False
 
-        metadata = result["metadatas"][0] if result.get("metadatas") else {}
-        metadata.update(fields)
-        await asyncio.to_thread(collection.update, ids=[memory_id], metadatas=[metadata])
-        return True
+            metadata = result["metadatas"][0] if result.get("metadatas") else {}
+            metadata.update(fields)
+            await asyncio.to_thread(
+                collection.update,
+                ids=[memory_id],
+                metadatas=[metadata],
+            )
+            return True
 
     async def record_activation(
         self,
@@ -1231,18 +1243,28 @@ class MemoryStore:
         prediction_error: float | None = None,
     ) -> bool:
         """想起時の活性化情報を更新."""
-        memory = await self.get_by_id(memory_id)
-        if memory is None:
-            return False
+        async with self._metadata_lock:
+            collection = self._ensure_connected()
+            result = await asyncio.to_thread(collection.get, ids=[memory_id])
+            if not result or not result.get("ids"):
+                return False
 
-        payload: dict[str, Any] = {
-            "activation_count": memory.activation_count + 1,
-            "last_activated": datetime.now().isoformat(),
-        }
-        if prediction_error is not None:
-            payload["prediction_error"] = max(0.0, min(1.0, prediction_error))
+            metadata = result["metadatas"][0] if result.get("metadatas") else {}
+            metadata["activation_count"] = (
+                _safe_int(metadata.get("activation_count", 0), 0) + 1
+            )
+            metadata["last_activated"] = datetime.now().isoformat()
+            if prediction_error is not None:
+                metadata["prediction_error"] = max(
+                    0.0, min(1.0, prediction_error)
+                )
 
-        return await self.update_memory_fields(memory_id, **payload)
+            await asyncio.to_thread(
+                collection.update,
+                ids=[memory_id],
+                metadatas=[metadata],
+            )
+            return True
 
     async def bump_coactivation(
         self,
@@ -1251,31 +1273,45 @@ class MemoryStore:
         delta: float = 0.1,
     ) -> bool:
         """共起重みを双方向で増加."""
-        source = await self.get_by_id(source_id)
-        target = await self.get_by_id(target_id)
-        if source is None or target is None:
-            return False
-
         delta = max(0.0, min(1.0, delta))
+        async with self._metadata_lock:
+            collection = self._ensure_connected()
+            requested_ids = list(dict.fromkeys([source_id, target_id]))
+            results = await asyncio.to_thread(collection.get, ids=requested_ids)
+            result_ids = results.get("ids", []) if results else []
+            metadatas = results.get("metadatas", []) if results else []
+            metadata_by_id = {
+                memory_id: metadatas[index] if index < len(metadatas) else {}
+                for index, memory_id in enumerate(result_ids)
+            }
+            if source_id not in metadata_by_id or target_id not in metadata_by_id:
+                return False
 
-        updates: list[tuple[str, dict[str, Any]]] = []
-        for left, right_id in ((source, target_id), (target, source_id)):
-            weight_map = {item_id: value for item_id, value in left.coactivation_weights}
-            current = weight_map.get(right_id, 0.0)
-            weight_map[right_id] = max(0.0, min(1.0, current + delta))
-            updates.append(
-                (
-                    left.id,
-                    {
-                        "coactivation": json.dumps(weight_map, ensure_ascii=False),
-                    },
+            pairs = [(source_id, target_id)]
+            if source_id != target_id:
+                pairs.append((target_id, source_id))
+
+            update_ids: list[str] = []
+            update_metadatas: list[dict[str, Any]] = []
+            for left_id, right_id in pairs:
+                metadata = dict(metadata_by_id[left_id])
+                weight_map = dict(
+                    _parse_coactivation_weights(metadata.get("coactivation", ""))
                 )
+                current = weight_map.get(right_id, 0.0)
+                weight_map[right_id] = max(0.0, min(1.0, current + delta))
+                metadata["coactivation"] = json.dumps(
+                    weight_map, ensure_ascii=False
+                )
+                update_ids.append(left_id)
+                update_metadatas.append(metadata)
+
+            await asyncio.to_thread(
+                collection.update,
+                ids=update_ids,
+                metadatas=update_metadatas,
             )
-
-        for memory_id, payload in updates:
-            await self.update_memory_fields(memory_id, **payload)
-
-        return True
+            return True
 
     async def maybe_add_related_link(
         self,

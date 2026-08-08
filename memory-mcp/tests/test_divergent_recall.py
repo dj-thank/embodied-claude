@@ -7,6 +7,103 @@ import pytest
 from memory_mcp.memory import MemoryStore
 
 
+class TestMetadataConcurrency:
+    """Concurrent metadata mutations must not overwrite each other."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_activation_updates_do_not_lose_counts(
+        self,
+        memory_store: MemoryStore,
+    ):
+        memory = await memory_store.save(content="並行活性化の対象")
+
+        results = await asyncio.gather(
+            *(memory_store.record_activation(memory.id) for _ in range(8))
+        )
+
+        assert all(results)
+        updated = await memory_store.get_by_id(memory.id)
+        assert updated is not None
+        assert updated.activation_count == 8
+
+    @pytest.mark.asyncio
+    async def test_concurrent_coactivation_updates_do_not_lose_weight(
+        self,
+        memory_store: MemoryStore,
+    ):
+        source = await memory_store.save(content="共起 source")
+        target = await memory_store.save(content="共起 target")
+
+        results = await asyncio.gather(
+            *(
+                memory_store.bump_coactivation(source.id, target.id, delta=0.1)
+                for _ in range(8)
+            )
+        )
+
+        assert all(results)
+        updated_source = await memory_store.get_by_id(source.id)
+        updated_target = await memory_store.get_by_id(target.id)
+        assert updated_source is not None
+        assert updated_target is not None
+        assert dict(updated_source.coactivation_weights)[target.id] == pytest.approx(0.8)
+        assert dict(updated_target.coactivation_weights)[source.id] == pytest.approx(0.8)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_partial_updates_preserve_distinct_fields(
+        self,
+        memory_store: MemoryStore,
+    ):
+        memory = await memory_store.save(content="部分更新の競合対象")
+
+        results = await asyncio.gather(
+            memory_store.update_memory_fields(memory.id, novelty_score=0.7),
+            memory_store.update_memory_fields(memory.id, prediction_error=0.8),
+        )
+
+        assert all(results)
+        updated = await memory_store.get_by_id(memory.id)
+        assert updated is not None
+        assert updated.novelty_score == pytest.approx(0.7)
+        assert updated.prediction_error == pytest.approx(0.8)
+
+    @pytest.mark.asyncio
+    async def test_episode_and_scoring_updates_preserve_both_fields(
+        self,
+        memory_store: MemoryStore,
+    ):
+        memory = await memory_store.save(content="episode 更新の競合対象")
+
+        scoring_result, episode_result = await asyncio.gather(
+            memory_store.update_memory_fields(memory.id, novelty_score=0.6),
+            memory_store.update_episode_id(memory.id, "episode-1"),
+        )
+
+        assert episode_result is None
+        assert scoring_result is True
+        updated = await memory_store.get_by_id(memory.id)
+        assert updated is not None
+        assert updated.episode_id == "episode-1"
+        assert updated.novelty_score == pytest.approx(0.6)
+
+    @pytest.mark.asyncio
+    async def test_access_and_activation_updates_preserve_both_counters(
+        self,
+        memory_store: MemoryStore,
+    ):
+        memory = await memory_store.save(content="異種 counter の競合対象")
+
+        await asyncio.gather(
+            *(memory_store.update_access(memory.id) for _ in range(4)),
+            *(memory_store.record_activation(memory.id) for _ in range(4)),
+        )
+
+        updated = await memory_store.get_by_id(memory.id)
+        assert updated is not None
+        assert updated.access_count == 4
+        assert updated.activation_count == 4
+
+
 class TestDivergentRecall:
     """Divergent recall behavior tests."""
 

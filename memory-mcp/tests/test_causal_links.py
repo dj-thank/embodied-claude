@@ -1,5 +1,7 @@
 """Tests for Phase 5: Causal Links."""
 
+import asyncio
+
 import pytest
 
 from memory_mcp.types import LinkType, MemoryLink
@@ -125,6 +127,34 @@ class TestCausalLinksIntegration:
         assert updated_mem2.links[0].target_id == mem1.id
         assert updated_mem2.links[0].link_type == "caused_by"
         assert updated_mem2.links[0].note == "mem1 caused mem2"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_causal_links_do_not_overwrite_each_other(
+        self, memory_store
+    ) -> None:
+        """Concurrent links from one source must all survive."""
+        source = await memory_store.save(content="Shared causal source")
+        targets = [
+            await memory_store.save(content=f"Causal target {index}")
+            for index in range(8)
+        ]
+
+        await asyncio.gather(
+            *(
+                memory_store.add_causal_link(
+                    source.id,
+                    target.id,
+                    link_type="related",
+                )
+                for target in targets
+            )
+        )
+
+        updated = await memory_store.get_by_id(source.id)
+        assert updated is not None
+        assert {link.target_id for link in updated.links} == {
+            target.id for target in targets
+        }
 
     @pytest.mark.asyncio
     async def test_add_causal_link_duplicate_prevention(self, memory_store) -> None:

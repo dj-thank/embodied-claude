@@ -414,6 +414,31 @@ class TestAutoLinking:
         assert mem2.id in mem1_updated.linked_ids
 
     @pytest.mark.asyncio
+    async def test_concurrent_auto_links_preserve_all_backlinks(
+        self, memory_store: MemoryStore
+    ):
+        """Concurrent auto-link saves must not overwrite a shared backlink set."""
+        import asyncio
+
+        existing = await memory_store.save(content="共通リンク対象")
+
+        created = await asyncio.gather(
+            *(
+                memory_store.save_with_auto_link(
+                    content=f"共通リンク対象 {index}",
+                    link_threshold=2.0,
+                    max_links=20,
+                )
+                for index in range(4)
+            )
+        )
+
+        assert all(existing.id in memory.linked_ids for memory in created)
+        existing_after = await memory_store.get_by_id(existing.id)
+        assert existing_after is not None
+        assert {memory.id for memory in created}.issubset(existing_after.linked_ids)
+
+    @pytest.mark.asyncio
     async def test_get_linked_memories(self, memory_store: MemoryStore):
         """Test retrieving linked memories."""
         # Save and link memories manually
