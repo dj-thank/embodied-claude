@@ -21,6 +21,7 @@
 | [elevenlabs-t2s-mcp](./elevenlabs-t2s-mcp/) | 声 | ElevenLabs で音声合成(Audio Tags対応) | ElevenLabs API + go2rtc |
 | [memory-mcp](./memory-mcp/) | 脳 | 長期記憶(セマンティック検索) | ChromaDB |
 | [system-temperature-mcp](./system-temperature-mcp/) | 体温感覚 | システム温度監視 | Linux sensors |
+| [action-policy](./action-policy/) | 行動ゲート | 全 embodied tool の実行前分類・確認 | Claude Code PreToolUse |
 
 ## アーキテクチャ
 
@@ -29,6 +30,11 @@
 │                        Claude Code                              │
 │                    (MCP Client / AI Brain)                      │
 └─────────────────────────┬───────────────────────────────────────┘
+                          │ PreToolUse
+                 ┌────────▼────────┐
+                 │  action-policy  │
+                 │ allow/ask/deny  │
+                 └────────┬────────┘
                           │ MCP Protocol (stdio)
           ┌───────────────┼───────────────┬───────────────┐
           │               │               │               │
@@ -46,6 +52,12 @@
 │ (nuroum V11)│   │  (C210等)   │   │  (Vector)   │   │(/sys/class) │
 └─────────────┘   └─────────────┘   └─────────────┘   └─────────────┘
 ```
+
+Project settings が有効な Claude Code session では、`.claude/settings.json` が全
+`mcp__.*` call を `action-policy` に通します。
+通常の対話 session では撮影、camera motion、発話、永続書込み、削除を実行前に
+Claude Code の確認 UI へ送ります。既知の read-only、local bookkeeping、local ephemeral
+tool は自動許可されます。
 
 ## 必要なもの
 
@@ -212,6 +224,14 @@ uv sync
 }
 ```
 
+Action gate の hook environment も先に同期する:
+
+```bash
+cd action-policy
+uv sync
+cd ..
+```
+
 ## 使い方
 
 Claude Code を起動すると、自然言語でカメラを操作できる:
@@ -346,6 +366,11 @@ cp autonomous-mcp.json.example autonomous-mcp.json
 # autonomous-mcp.json を編集してカメラの認証情報を設定
 ```
 
+スクリプトは既定で repository root の `autonomous-mcp.json` だけを読み、読めない場合は
+Claude を起動せず終了します。別の場所を使う場合だけ
+`AUTONOMOUS_MCP_CONFIG=/absolute/path/to/mcp.json` を指定してください。Claude Code には
+`--mcp-config` と `--strict-mcp-config` を渡すため、user/project の別 MCP 設定は混在しません。
+
 2. **スクリプトの実行権限を付与**
 
 ```bash
@@ -357,7 +382,17 @@ chmod +x autonomous-action.sh
 ```bash
 crontab -e
 # 以下を追加(10分ごとに実行)
-*/10 * * * * /path/to/embodied-claude/autonomous-action.sh
+*/10 * * * * EMBODIED_AUTONOMOUS_ALLOW=mcp__wifi-cam__see,mcp__memory__remember /path/to/embodied-claude/autonomous-action.sh
+```
+
+自律実行は action gate により outward action を既定拒否します。必要な tool だけを
+cron の環境で exact name allowlist に入れてください。destructive tool は許可できません。
+スクリプト自身は `--allowedTools` で外向き tool を事前許可せず、project settings の
+PreToolUse gate が `allow` を返した call だけを通します。
+
+```bash
+EMBODIED_AUTONOMOUS_ALLOW="mcp__wifi-cam__see,mcp__memory__remember" \
+  /path/to/embodied-claude/autonomous-action.sh
 ```
 
 ### 動作
@@ -371,6 +406,7 @@ crontab -e
 
 - 定期的にカメラで撮影が行われます
 - 他人のプライバシーに配慮し、適切な場所で使用してください
+- allowlist は presence、consent、privacy zone、rate limit を代替しません
 - 不要な場合は cron から削除してください
 
 ## 哲学的考察

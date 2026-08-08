@@ -9,6 +9,7 @@ This repository contains multiple Python MCP servers that give Claude "senses" (
 - `elevenlabs-t2s-mcp/`: ElevenLabs text-to-speech (`src/elevenlabs_t2s_mcp/`).
 - `memory-mcp/`: Long‑term memory server (`src/memory_mcp/`) with tests in `memory-mcp/tests/`.
 - `system-temperature-mcp/`: System temperature sensor (`src/system_temperature_mcp/`).
+- `action-policy/`: Host-side PreToolUse action gate and the explicit classification for every embodied MCP tool.
 - `installer/`: PyInstaller-based GUI installer.
 - `.claude/`: Claude Code local settings.
 - Docs: `README.md`, `CLAUDE.md`.
@@ -30,11 +31,13 @@ Run commands from the target subproject directory.
 - Frameworks: `pytest` + `pytest-asyncio`.
 - Tests live in each package's `tests/` directory.
 - Example: `cd memory-mcp && uv run --extra dev pytest`.
+- Any added or renamed MCP tool must also be classified in `action-policy`; its inventory contract test must remain green.
 
 ## Configuration, Hardware, and WSL2 Notes
 - `.env` is not committed; pass camera credentials via environment variables.
 - ElevenLabs requires `ELEVENLABS_API_KEY` in the environment (see `elevenlabs-t2s-mcp/.env.example`).
 - Long‑term memory stores data under `~/.claude/memories/`.
+- Interactive outward actions must pass the project PreToolUse gate. Autonomous runs default-deny outward actions unless the operator exact-tool allowlists them; destructive actions remain denied.
 - WSL2: USB webcams need `usbipd` forwarding; system temperature does not work under WSL2.
 - Tapo cameras require a local camera account (not the TP‑Link cloud account) and a stable IP is recommended.
 

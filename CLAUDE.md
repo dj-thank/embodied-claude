@@ -30,6 +30,11 @@ embodied-claude/
 │   └── src/system_temperature_mcp/
 │       └── server.py      # 温度センサー読み取り
 │
+├── action-policy/         # PreToolUse 中央行動ゲート(Python)
+│   └── src/action_policy/
+│       ├── gate.py        # tool分類 + allow/ask/deny
+│       └── hook.py        # Claude Code hook adapter
+│
 └── .claude/               # Claude Code ローカル設定
     └── settings.local.json
 ```
@@ -115,6 +120,8 @@ uv run --extra dev pytest -v       # テストが通ること
 | ツール | パラメータ | 説明 |
 |--------|-----------|------|
 | `remember` | content, emotion?, importance?, category? | 記憶保存 |
+| `prepare_forget` | memory_id | one-time削除tokenの準備(削除はしない) |
+| `forget` | memory_id, confirmation_token | 記憶recordのlogical deletion |
 | `search_memories` | query, n_results?, filters... | 検索 |
 | `recall` | context, n_results? | 文脈想起 |
 | `recall_divergent` | context, n_results?, max_branches?, max_depth?, temperature?, include_diagnostics? | 発散的想起 |
@@ -134,6 +141,7 @@ uv run --extra dev pytest -v       # テストが通ること
 | `get_association_diagnostics` | context, sample_size? | 連想探索の診断情報 |
 | `link_memories` | source_id, target_id, link_type?, note? | 記憶をリンク |
 | `get_causal_chain` | memory_id, direction?, max_depth? | 因果チェーン取得 |
+| `tom` | situation, person? | 未信頼記憶dataを分離したTheory of Mind prompt |
 
 **Emotion**: happy, sad, surprised, moved, excited, nostalgic, curious, neutral
 **Category**: daily, philosophical, technical, memory, observation, feeling, conversation
@@ -152,6 +160,14 @@ uv run --extra dev pytest -v       # テストが通ること
 | `get_current_time` | なし | 現在時刻 |
 
 ## 注意事項
+
+### Action gate
+
+- `.claude/settings.json` の `PreToolUse` hook は全 `mcp__.*` call を `action-policy` に通す。
+- 撮影・録音、camera motion、外向き発話、永続書込み、削除は対話時でも確認なしに実行しない。
+- Autonomous mode は exact tool allowlist 以外を拒否し、destructive action はallowlistにあっても拒否する。
+- 新しいMCP toolを追加・改名したら `action-policy` の明示分類と inventory contractを同時に更新する。
+- このgateはquiet hours、presence、privacy zone、rate limit、consent ledgerの代替ではない。
 
 ### WSL2 環境
 

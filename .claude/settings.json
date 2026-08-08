@@ -10,6 +10,20 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/action-gate.sh",
+            "args": [],
+            "timeout": 10,
+            "statusMessage": "Checking embodied action policy"
+          }
+        ]
+      }
     ]
   }
 }

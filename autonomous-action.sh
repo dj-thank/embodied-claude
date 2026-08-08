@@ -4,13 +4,25 @@ set -euo pipefail
 
 umask 077
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# PreToolUse action policy must never fall back to interactive prompts in cron.
+export EMBODIED_ACTION_MODE=autonomous
+
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+MCP_CONFIG="${AUTONOMOUS_MCP_CONFIG:-$SCRIPT_DIR/autonomous-mcp.json}"
 LOG_DIR="${AUTONOMOUS_LOG_DIR:-${HOME:-.}/.claude/autonomous-logs}"
 mkdir -p "$LOG_DIR"
 
 if ! command -v "$CLAUDE_BIN" >/dev/null 2>&1; then
   echo "claude command not found: $CLAUDE_BIN" >&2
   exit 127
+fi
+
+if [[ ! -r "$MCP_CONFIG" ]]; then
+  echo "autonomous MCP config is not readable: $MCP_CONFIG" >&2
+  exit 78
 fi
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
@@ -27,6 +39,8 @@ PROMPT='自律行動タイム!以下を実行して:
 {
   echo "=== 自律行動開始: $(date) ==="
   printf '%s\n' "$PROMPT" | "$CLAUDE_BIN" -p \
-    --allowedTools "mcp__wifi-cam__see,mcp__wifi-cam__look_left,mcp__wifi-cam__look_right,mcp__wifi-cam__look_up,mcp__wifi-cam__look_down,mcp__wifi-cam__look_around,mcp__memory__remember,mcp__memory__search_memories,mcp__memory__recall,mcp__memory__list_recent_memories"
+    --strict-mcp-config \
+    --mcp-config "$MCP_CONFIG" \
+    --setting-sources project
   echo "=== 自律行動終了: $(date) ==="
 } >>"$LOG_FILE" 2>&1
