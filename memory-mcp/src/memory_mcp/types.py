@@ -281,6 +281,17 @@ class MemorySearchResult:
 
 
 @dataclass(frozen=True)
+class MemoryDeletionResult:
+    """Result of deleting one persistent memory record."""
+
+    memory_id: str
+    deleted: bool
+    cleaned_memory_ids: tuple[str, ...] = ()
+    deleted_episode_ids: tuple[str, ...] = ()
+    external_sensory_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ScoredMemory:
     """スコアリング済み検索結果."""
 

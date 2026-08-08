@@ -12,6 +12,7 @@ This MCP server provides long-term memory capabilities for AI assistants using C
 - **Semantic Search**: Find relevant memories using natural language queries
 - **Context-based Recall**: Automatically recall memories relevant to the current conversation
 - **Persistent Storage**: Memories are stored locally and persist across sessions
+- **Guarded Record Deletion**: Optional two-step deletion with an expiring one-time token
 - **Statistics**: Track memory counts by category and emotion
 
 ## Installation
@@ -36,6 +37,8 @@ Set these environment variables or create a `.env` file:
 |----------|---------|-------------|
 | `MEMORY_DB_PATH` | `~/.claude/memories/chroma` | ChromaDB storage path |
 | `MEMORY_COLLECTION_NAME` | `claude_memories` | Collection name |
+| `MEMORY_DELETION_ENABLED` | `false` | Explicitly enable destructive memory-record deletion |
+| `MEMORY_DELETION_TOKEN_TTL_SECONDS` | `300` | One-time deletion token TTL, clamped to 30-3600 seconds |
 
 ## Tools
 
@@ -89,6 +92,25 @@ List the most recent memories.
 ### get_memory_stats
 
 Get statistics about stored memories.
+
+### prepare_forget / forget
+
+Deletion is disabled by default. After an operator enables it, call
+`prepare_forget` with the exact memory ID, then pass its short-lived token and
+the same ID to `forget`. Tokens are one-time and a new preparation invalidates
+the previous one.
+
+`forget` removes the Chroma memory record, direct links/coactivation entries,
+working-memory copies, and episode summaries containing that memory. It does
+**not** delete external image or audio files referenced by sensory metadata;
+those paths are returned for a separately governed media-deletion workflow.
+This is application-level logical deletion, not verified secure erasure from
+ChromaDB storage files, write-ahead logs, filesystem snapshots, or backups.
+
+The token limits accidental, mismatched, expired, and replayed calls; it is not
+proof of human authorization. Keep deletion disabled unless a trusted host UI
+or policy gate obtains explicit user confirmation. Mutation serialization is
+process-local and is not a cross-process ChromaDB transaction.
 
 ## Claude Code Integration
 

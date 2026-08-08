@@ -4,6 +4,8 @@ import asyncio
 import json
 import math
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
@@ -25,6 +27,7 @@ from .predictive import (
 from .types import (
     CameraPosition,
     Memory,
+    MemoryDeletionResult,
     MemoryLink,
     MemorySearchResult,
     MemoryStats,
@@ -273,6 +276,7 @@ class MemoryStore:
         self._collection: chromadb.Collection | None = None  # claude_memories
         self._episodes_collection: chromadb.Collection | None = None  # Phase 4
         self._lock = asyncio.Lock()
+        self._lifecycle_lock = asyncio.Lock()
         self._metadata_lock = asyncio.Lock()
         # Phase 4: 作業記憶バッファ
         self._working_memory = WorkingMemoryBuffer(capacity=20)
@@ -316,6 +320,12 @@ class MemoryStore:
         if self._collection is None:
             raise RuntimeError("MemoryStore not connected. Call connect() first.")
         return self._collection
+
+    @asynccontextmanager
+    async def lifecycle_transaction(self) -> AsyncIterator[None]:
+        """Serialize record/link and episode lifecycle mutations in this process."""
+        async with self._lifecycle_lock:
+            yield
 
     async def save(
         self,
@@ -816,37 +826,53 @@ class MemoryStore:
             if result.distance <= link_threshold
         ]
 
-        linked_ids = tuple(m.id for m in memories_to_link)
+        candidate_ids = tuple(dict.fromkeys(memory.id for memory in memories_to_link))
 
-        # 記憶を保存
-        collection = self._ensure_connected()
+        async with self.lifecycle_transaction():
+            async with self._metadata_lock:
+                collection = self._ensure_connected()
 
-        memory_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
-        importance = max(1, min(5, importance))
+                # Search and persistence are separate Chroma operations. Revalidate
+                # candidates under the lifecycle lock so concurrent deletion cannot
+                # leave a dangling linked_id on the new record.
+                existing_ids: set[str] = set()
+                if candidate_ids:
+                    existing = await asyncio.to_thread(
+                        collection.get,
+                        ids=list(candidate_ids),
+                    )
+                    existing_ids = set(existing.get("ids", []) if existing else [])
+                linked_ids = tuple(
+                    candidate_id
+                    for candidate_id in candidate_ids
+                    if candidate_id in existing_ids
+                )
 
-        memory = Memory(
-            id=memory_id,
-            content=content,
-            timestamp=timestamp,
-            emotion=emotion,
-            importance=importance,
-            category=category,
-            linked_ids=linked_ids,
-        )
+                memory_id = str(uuid.uuid4())
+                timestamp = datetime.now().isoformat()
+                importance = max(1, min(5, importance))
 
-        await asyncio.to_thread(
-            collection.add,
-            ids=[memory_id],
-            documents=[content],
-            metadatas=[memory.to_metadata()],
-        )
+                memory = Memory(
+                    id=memory_id,
+                    content=content,
+                    timestamp=timestamp,
+                    emotion=emotion,
+                    importance=importance,
+                    category=category,
+                    linked_ids=linked_ids,
+                )
 
-        await self._working_memory.add(memory)
+                await asyncio.to_thread(
+                    collection.add,
+                    ids=[memory_id],
+                    documents=[content],
+                    metadatas=[memory.to_metadata()],
+                )
 
-        # 双方向リンクを追加
-        for target_id in linked_ids:
-            await self._add_bidirectional_link(memory_id, target_id)
+                for target_id in linked_ids:
+                    await self._add_bidirectional_link_unlocked(memory_id, target_id)
+
+                await self._working_memory.add(memory)
 
         return memory
 
@@ -1103,6 +1129,144 @@ class MemoryStore:
                 memories.append(memory)
 
         return memories
+
+    async def delete_memory_record(self, memory_id: str) -> MemoryDeletionResult:
+        """Delete one record and remove direct in-database references to it.
+
+        External sensory files are reported but intentionally not deleted.
+        Episodes containing the memory are deleted so their summaries cannot
+        retain the removed content; surviving member memories are detached.
+        """
+        async with self.lifecycle_transaction():
+            return await self._delete_memory_record_in_transaction(memory_id)
+
+    async def _delete_memory_record_in_transaction(
+        self,
+        memory_id: str,
+    ) -> MemoryDeletionResult:
+        """Delete a record while the caller owns the lifecycle transaction."""
+        async with self._metadata_lock:
+            collection = self._ensure_connected()
+            target_result = await asyncio.to_thread(collection.get, ids=[memory_id])
+            target_exists = bool(target_result and target_result.get("ids"))
+            target_metadatas = (
+                (target_result.get("metadatas") or []) if target_result else []
+            )
+            target_metadata = target_metadatas[0] if target_metadatas else {}
+            target_sensory_data = _parse_sensory_data(
+                target_metadata.get("sensory_data", "")
+            )
+            external_paths = tuple(
+                dict.fromkeys(
+                    sensory.file_path
+                    for sensory in target_sensory_data
+                    if sensory.file_path
+                )
+            )
+
+            deleted_episode_ids: list[str] = []
+            if self._episodes_collection is not None:
+                episode_results = await asyncio.to_thread(
+                    self._episodes_collection.get
+                )
+                episode_ids = (
+                    (episode_results.get("ids") or []) if episode_results else []
+                )
+                episode_metadatas = (
+                    (episode_results.get("metadatas") or [])
+                    if episode_results
+                    else []
+                )
+                target_episode_id = target_metadata.get("episode_id", "")
+                for index, episode_id in enumerate(episode_ids):
+                    metadata = (
+                        episode_metadatas[index]
+                        if index < len(episode_metadatas)
+                        else {}
+                    )
+                    member_ids = _decode_string_tuple(metadata.get("memory_ids", ""))
+                    if memory_id in member_ids or episode_id == target_episode_id:
+                        deleted_episode_ids.append(episode_id)
+
+            deleted_episode_id_set = set(deleted_episode_ids)
+            all_results = await asyncio.to_thread(collection.get)
+            all_ids = (all_results.get("ids") or []) if all_results else []
+            all_metadatas = (
+                (all_results.get("metadatas") or []) if all_results else []
+            )
+            update_ids: list[str] = []
+            update_metadatas: list[dict[str, Any]] = []
+
+            for index, other_id in enumerate(all_ids):
+                if other_id == memory_id:
+                    continue
+                raw_metadata = (
+                    all_metadatas[index] if index < len(all_metadatas) else {}
+                )
+                metadata = dict(raw_metadata or {})
+                changed = False
+
+                linked_ids = _parse_linked_ids(metadata.get("linked_ids", ""))
+                filtered_linked_ids = tuple(
+                    linked_id for linked_id in linked_ids if linked_id != memory_id
+                )
+                if filtered_linked_ids != linked_ids:
+                    metadata["linked_ids"] = _encode_string_tuple(filtered_linked_ids)
+                    changed = True
+
+                links = _parse_links(metadata.get("links", ""))
+                filtered_links = tuple(
+                    link for link in links if link.target_id != memory_id
+                )
+                if filtered_links != links:
+                    metadata["links"] = json.dumps(
+                        [link.to_dict() for link in filtered_links],
+                        ensure_ascii=False,
+                    )
+                    changed = True
+
+                coactivation = dict(
+                    _parse_coactivation_weights(metadata.get("coactivation", ""))
+                )
+                if memory_id in coactivation:
+                    coactivation.pop(memory_id)
+                    metadata["coactivation"] = json.dumps(
+                        coactivation, ensure_ascii=False
+                    )
+                    changed = True
+
+                if metadata.get("episode_id", "") in deleted_episode_id_set:
+                    metadata["episode_id"] = ""
+                    changed = True
+
+                if changed:
+                    update_ids.append(other_id)
+                    update_metadatas.append(metadata)
+
+            if update_ids:
+                await asyncio.to_thread(
+                    collection.update,
+                    ids=update_ids,
+                    metadatas=update_metadatas,
+                )
+
+            if deleted_episode_ids and self._episodes_collection is not None:
+                await asyncio.to_thread(
+                    self._episodes_collection.delete,
+                    ids=deleted_episode_ids,
+                )
+
+            if target_exists:
+                await asyncio.to_thread(collection.delete, ids=[memory_id])
+
+        await self._working_memory.remove(memory_id)
+        return MemoryDeletionResult(
+            memory_id=memory_id,
+            deleted=target_exists,
+            cleaned_memory_ids=tuple(update_ids),
+            deleted_episode_ids=tuple(deleted_episode_ids),
+            external_sensory_paths=external_paths,
+        )
 
     # Phase 5: 因果リンク
 

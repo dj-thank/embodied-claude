@@ -1,14 +1,17 @@
 """MCP Server for AI Long-term Memory - Let AI remember across sessions!"""
 
 import asyncio
+import hashlib
 import json
 import logging
+import secrets
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import CallToolResult, TextContent, Tool
 
 from .config import MemoryConfig, ServerConfig
 from .episode import EpisodeManager
@@ -18,6 +21,19 @@ from .types import CameraPosition, MemorySearchResult
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _tool_error(message: str) -> CallToolResult:
+    """Return a protocol-level MCP tool error."""
+    return CallToolResult(
+        content=[TextContent(type="text", text=f"Error: {message}")],
+        isError=True,
+    )
+
+
+def _monotonic() -> float:
+    """Return monotonic time through a testable boundary."""
+    return time.monotonic()
 
 
 def _prompt_safe_json(value: Any) -> str:
@@ -72,6 +88,7 @@ class MemoryMCPServer:
         self._episode_manager: EpisodeManager | None = None  # Phase 4.2
         self._sensory_integration: SensoryIntegration | None = None  # Phase 4.3
         self._server_config = ServerConfig.from_env()
+        self._pending_deletion: tuple[str, str, float] | None = None
         self._setup_handlers()
 
     def _setup_handlers(self) -> None:
@@ -124,6 +141,48 @@ class MemoryMCPServer:
                             },
                         },
                         "required": ["content"],
+                    },
+                ),
+                Tool(
+                    name="prepare_forget",
+                    description=(
+                        "Prepare a fail-closed, one-time deletion token for one memory "
+                        "record. This does not delete anything. Only use after the user "
+                        "explicitly requests deletion. Disabled unless the operator sets "
+                        "MEMORY_DELETION_ENABLED=true."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "memory_id": {
+                                "type": "string",
+                                "description": "Exact ID of the memory record to delete",
+                            }
+                        },
+                        "required": ["memory_id"],
+                    },
+                ),
+                Tool(
+                    name="forget",
+                    description=(
+                        "Delete one live Chroma memory record and its direct database "
+                        "references using a fresh token from prepare_forget. This is "
+                        "logical deletion, not verified storage-level secure erasure. "
+                        "External sensory files are reported but are not deleted."
+                    ),
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "memory_id": {
+                                "type": "string",
+                                "description": "Exact memory ID bound to the token",
+                            },
+                            "confirmation_token": {
+                                "type": "string",
+                                "description": "One-time token from prepare_forget",
+                            },
+                        },
+                        "required": ["memory_id", "confirmation_token"],
                     },
                 ),
                 Tool(
@@ -647,10 +706,12 @@ class MemoryMCPServer:
             ]
 
         @self._server.call_tool()
-        async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+        async def call_tool(
+            name: str, arguments: dict[str, Any]
+        ) -> list[TextContent] | CallToolResult:
             """Handle tool calls."""
             if self._memory_store is None:
-                return [TextContent(type="text", text="Error: Memory store not connected")]
+                return _tool_error("memory store not connected")
 
             try:
                 match name:
@@ -683,6 +744,108 @@ class MemoryMCPServer:
                             TextContent(
                                 type="text",
                                 text=f"Memory saved!\nID: {memory.id}\nTimestamp: {memory.timestamp}\nEmotion: {memory.emotion}\nImportance: {memory.importance}\nCategory: {memory.category}{linked_info}",
+                            )
+                        ]
+
+                    case "prepare_forget":
+                        self._pending_deletion = None
+                        if not self._server_config.deletion_enabled:
+                            return _tool_error(
+                                "memory deletion is disabled by the operator"
+                            )
+
+                        memory_id = arguments.get("memory_id", "")
+                        if not memory_id:
+                            return _tool_error("memory_id is required")
+                        memory = await self._memory_store.get_by_id(memory_id)
+                        if memory is None:
+                            return _tool_error("memory not found")
+
+                        token = secrets.token_urlsafe(32)
+                        expires_at = (
+                            _monotonic()
+                            + self._server_config.deletion_token_ttl_seconds
+                        )
+                        self._pending_deletion = (token, memory_id, expires_at)
+                        preparation = {
+                            "status": "pending",
+                            "memory_id": memory_id,
+                            "content_sha256": hashlib.sha256(
+                                memory.content.encode("utf-8")
+                            ).hexdigest(),
+                            "confirmation_token": token,
+                            "expires_in_seconds": (
+                                self._server_config.deletion_token_ttl_seconds
+                            ),
+                            "warning": (
+                                "forget logically deletes the live memory record, direct "
+                                "references, and containing episode summaries; external "
+                                "sensory files are not deleted and storage-level secure "
+                                "erasure is not verified"
+                            ),
+                        }
+                        return [
+                            TextContent(
+                                type="text",
+                                text=json.dumps(preparation, ensure_ascii=False),
+                            )
+                        ]
+
+                    case "forget":
+                        pending = self._pending_deletion
+                        self._pending_deletion = None
+                        if not self._server_config.deletion_enabled:
+                            return _tool_error(
+                                "memory deletion is disabled by the operator"
+                            )
+
+                        memory_id = arguments.get("memory_id", "")
+                        token = arguments.get("confirmation_token", "")
+                        if not memory_id or not token:
+                            return _tool_error(
+                                "memory_id and confirmation_token are required"
+                            )
+                        if pending is None:
+                            return _tool_error("no pending memory deletion")
+
+                        expected_token, expected_memory_id, expires_at = pending
+                        if _monotonic() >= expires_at:
+                            return _tool_error("memory deletion token expired")
+                        if memory_id != expected_memory_id or not secrets.compare_digest(
+                            token, expected_token
+                        ):
+                            return _tool_error(
+                                "memory deletion token does not match the exact memory ID"
+                            )
+
+                        try:
+                            deletion = await self._memory_store.delete_memory_record(
+                                memory_id
+                            )
+                        except Exception as error:
+                            logger.error(
+                                "Memory record deletion failed (%s)",
+                                type(error).__name__,
+                            )
+                            return _tool_error("memory record deletion failed")
+                        if not deletion.deleted:
+                            return _tool_error("memory not found")
+
+                        output = {
+                            "status": "deleted",
+                            "memory_id": memory_id,
+                            "cleaned_memory_ids": deletion.cleaned_memory_ids,
+                            "deleted_episode_ids": deletion.deleted_episode_ids,
+                            "external_sensory_files_deleted": False,
+                            "storage_secure_erase_verified": False,
+                            "external_sensory_paths_preserved": (
+                                deletion.external_sensory_paths
+                            ),
+                        }
+                        return [
+                            TextContent(
+                                type="text",
+                                text=json.dumps(output, ensure_ascii=False),
                             )
                         ]
 
@@ -1287,14 +1450,15 @@ Date Range:
                         return [TextContent(type="text", text=output)]
 
                     case _:
-                        return [TextContent(type="text", text=f"Unknown tool: {name}")]
+                        return _tool_error(f"unknown tool: {name}")
 
-            except Exception as e:
-                logger.exception(f"Error in tool {name}")
-                return [TextContent(type="text", text=f"Error: {e!s}")]
+            except Exception as error:
+                logger.error("Error in tool %s (%s)", name, type(error).__name__)
+                return _tool_error("tool execution failed")
 
     async def connect_memory(self) -> None:
         """Connect to memory store (Phase 4: with episode manager & sensory integration)."""
+        self._pending_deletion = None
         config = MemoryConfig.from_env()
         self._memory_store = MemoryStore(config)
         await self._memory_store.connect()
@@ -1311,6 +1475,7 @@ Date Range:
 
     async def disconnect_memory(self) -> None:
         """Disconnect from memory store."""
+        self._pending_deletion = None
         if self._memory_store:
             await self._memory_store.disconnect()
             self._memory_store = None

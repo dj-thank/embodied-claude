@@ -37,6 +37,16 @@ class WorkingMemoryBuffer:
         async with self._lock:
             self._buffer.append(memory)
 
+    async def remove(self, memory_id: str) -> bool:
+        """Remove every buffered copy of a memory ID."""
+        async with self._lock:
+            original_size = len(self._buffer)
+            self._buffer = deque(
+                (memory for memory in self._buffer if memory.id != memory_id),
+                maxlen=self._buffer.maxlen,
+            )
+            return len(self._buffer) != original_size
+
     async def get_recent(self, n: int = 10) -> list[Memory]:
         """最近のn件を取得.
 

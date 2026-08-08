@@ -54,6 +54,33 @@ class TestWorkingMemoryBasic:
         assert recent[1].id == "2"
 
     @pytest.mark.asyncio
+    async def test_remove_evicts_only_the_requested_memory(self):
+        """Deleting a persistent memory must also evict its working copy."""
+        buffer = WorkingMemoryBuffer(capacity=5)
+        first = Memory(
+            id="first",
+            content="First memory",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            emotion="neutral",
+            importance=3,
+            category="daily",
+        )
+        second = Memory(
+            id="second",
+            content="Second memory",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            emotion="neutral",
+            importance=3,
+            category="daily",
+        )
+        await buffer.add(first)
+        await buffer.add(second)
+
+        assert await buffer.remove(first.id) is True
+        assert [memory.id for memory in await buffer.get_all()] == [second.id]
+        assert await buffer.remove("missing") is False
+
+    @pytest.mark.asyncio
     async def test_get_all(self):
         """Test getting all memories in buffer."""
         buffer = WorkingMemoryBuffer(capacity=3)

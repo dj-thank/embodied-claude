@@ -127,6 +127,27 @@ class TestEpisodeCreation:
             )
 
     @pytest.mark.asyncio
+    async def test_create_episode_rejects_partially_missing_memory_ids(
+        self, memory_store, episode_manager
+    ):
+        """An episode must not silently omit requested memories."""
+        episode_ids_before = {
+            episode.id for episode in await episode_manager.list_all_episodes()
+        }
+        memory = await memory_store.save(content="Existing memory", importance=3)
+
+        with pytest.raises(ValueError, match="Memories not found: missing-id"):
+            await episode_manager.create_episode(
+                title="Incomplete Episode",
+                memory_ids=[memory.id, "missing-id"],
+            )
+
+        episode_ids_after = {
+            episode.id for episode in await episode_manager.list_all_episodes()
+        }
+        assert episode_ids_after == episode_ids_before
+
+    @pytest.mark.asyncio
     async def test_create_episode_single_memory(self, memory_store, episode_manager):
         """Test creating episode with single memory."""
         mem = await memory_store.save(content="Single memory", importance=4)

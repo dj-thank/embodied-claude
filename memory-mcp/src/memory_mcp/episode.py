@@ -58,10 +58,30 @@ class EpisodeManager:
         if not memory_ids:
             raise ValueError("memory_ids cannot be empty")
 
+        async with self._memory_store.lifecycle_transaction():
+            return await self._create_episode_in_transaction(
+                title=title,
+                memory_ids=memory_ids,
+                participants=participants,
+                auto_summarize=auto_summarize,
+            )
+
+    async def _create_episode_in_transaction(
+        self,
+        title: str,
+        memory_ids: list[str],
+        participants: list[str] | None,
+        auto_summarize: bool,
+    ) -> Episode:
+        """Create an episode while the memory lifecycle transaction is held."""
+
         # 記憶を取得して時系列順にソート
         memories = await self._memory_store.get_by_ids(memory_ids)
-        if not memories:
-            raise ValueError("No memories found for the given IDs")
+        requested_ids = set(memory_ids)
+        found_ids = {memory.id for memory in memories}
+        missing_ids = requested_ids - found_ids
+        if missing_ids:
+            raise ValueError(f"Memories not found: {', '.join(sorted(missing_ids))}")
 
         memories.sort(key=lambda m: m.timestamp)
 
@@ -245,6 +265,11 @@ class EpisodeManager:
         Args:
             episode_id: 削除するエピソードID
         """
+        async with self._memory_store.lifecycle_transaction():
+            await self._delete_episode_in_transaction(episode_id)
+
+    async def _delete_episode_in_transaction(self, episode_id: str) -> None:
+        """Delete an episode while the memory lifecycle transaction is held."""
         # エピソードに含まれる記憶のepisode_idをクリア
         episode = await self.get_episode_by_id(episode_id)
         if episode:
