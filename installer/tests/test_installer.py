@@ -68,3 +68,184 @@ def test_update_claude_settings_preserves_existing_values(tmp_path: Path) -> Non
     saved = json.loads(settings_path.read_text(encoding="utf-8"))
     assert saved["existing"] is True
     assert saved["mcpServers"]["memory"]["command"] == "uv"
+
+
+def test_dependency_projects_always_include_action_policy() -> None:
+    worker = InstallationWorker({})
+
+    projects = worker._dependency_projects(Path("/repo"))
+
+    assert projects[0] == ("action-policy", Path("/repo/action-policy"))
+    assert ("system-temperature-mcp", Path("/repo/system-temperature-mcp")) in projects
+
+
+def test_uv_sync_uses_committed_lockfile(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = InstallationWorker({})
+    observed: dict[str, object] = {}
+
+    class SuccessfulSync:
+        returncode = 0
+        stdout = "sync complete"
+        stderr = ""
+
+    def fake_run(command: list[str], **kwargs: object) -> SuccessfulSync:
+        observed["command"] = command
+        observed["kwargs"] = kwargs
+        return SuccessfulSync()
+
+    monkeypatch.setattr("installer.pages.install.subprocess.run", fake_run)
+
+    worker._run_uv_sync(tmp_path)
+
+    assert observed["command"] == ["uv", "sync", "--locked"]
+
+
+def test_user_action_gate_hook_merge_is_preserving_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    worker = InstallationWorker({})
+    settings_path = tmp_path / ".claude" / "settings.json"
+    settings_path.parent.mkdir()
+    existing_hook = {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "existing-check"}],
+    }
+    colocated_custom_handler = {
+        "type": "command",
+        "command": "custom-embodied-audit",
+    }
+    status_collision_handler = {
+        "type": "command",
+        "command": "custom-policy",
+        "statusMessage": "Checking Sanpoloid action policy",
+    }
+    previous_managed_handler = {
+        "type": "command",
+        "command": "/old/repo/action-policy/.venv/bin/embodied-action-gate",
+        "args": [],
+        "timeout": 10,
+        "statusMessage": "Checking Sanpoloid action policy",
+    }
+    embodied_matcher = (
+        "mcp__wifi-cam__.*|mcp__usb-webcam__.*|mcp__memory__.*|"
+        "mcp__system-temperature__.*|mcp__elevenlabs-t2s__.*"
+    )
+    settings_path.write_text(
+        json.dumps(
+            {
+                "theme": "dark",
+                "hooks": {
+                    "PreToolUse": [
+                        existing_hook,
+                        {
+                            "matcher": "mcp__memory__.*",
+                            "hooks": [previous_managed_handler],
+                        },
+                        {
+                            "matcher": embodied_matcher,
+                            "hooks": [
+                                colocated_custom_handler,
+                                status_collision_handler,
+                            ],
+                        },
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    repo_path = tmp_path / "repo"
+
+    worker._update_claude_user_hooks(settings_path, repo_path)
+    worker._update_claude_user_hooks(settings_path, repo_path)
+
+    saved = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert saved["theme"] == "dark"
+    assert existing_hook in saved["hooks"]["PreToolUse"]
+    handlers = [
+        handler
+        for group in saved["hooks"]["PreToolUse"]
+        for handler in group.get("hooks", [])
+        if isinstance(handler, dict)
+    ]
+    assert colocated_custom_handler in handlers
+    assert status_collision_handler in handlers
+    managed = [
+        handler
+        for handler in handlers
+        if worker._is_managed_action_gate_handler(handler)
+    ]
+    assert len(managed) == 1
+    managed_groups = [
+        group
+        for group in saved["hooks"]["PreToolUse"]
+        if managed[0] in group.get("hooks", [])
+    ]
+    assert len(managed_groups) == 1
+    assert managed_groups[0]["matcher"] == embodied_matcher
+
+    if os.name == "nt":
+        assert managed[0]["command"] == "powershell.exe"
+        assert managed[0]["args"][:4] == [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ]
+        assert Path(managed[0]["args"][4]).name == "action-gate.ps1"
+        assert managed[0]["args"][5] == "-ActionPolicyDirectory"
+        assert Path(managed[0]["args"][6]).name == "action-policy"
+    else:
+        assert Path(managed[0]["command"]).name == "action-gate.sh"
+        assert len(managed[0]["args"]) == 1
+        assert Path(managed[0]["args"][0]).name == "action-policy"
+    assert list(settings_path.parent.glob(".settings.json.*.tmp")) == []
+
+
+def test_installer_publishes_global_mcp_config_only_after_user_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = InstallationWorker({})
+    action_gate = tmp_path / "embodied-action-gate.exe"
+    action_gate.touch()
+    wrapper = tmp_path / "action-gate.ps1"
+    wrapper.touch()
+    writes: list[str] = []
+
+    monkeypatch.setattr(worker, "_create_mcp_config", lambda _repo: {"mcpServers": {}})
+    monkeypatch.setattr(worker, "_dependency_projects", lambda _repo: [])
+    monkeypatch.setattr(worker, "_action_gate_executable", lambda _repo: action_gate)
+    monkeypatch.setattr(worker, "_action_gate_wrapper", lambda _repo: wrapper)
+    monkeypatch.setattr(worker, "_backup_if_exists", lambda _path: None)
+    monkeypatch.setattr(
+        worker,
+        "_update_claude_user_hooks",
+        lambda _settings, _repo: writes.append("user-gate"),
+    )
+    monkeypatch.setattr(
+        worker,
+        "_update_claude_settings",
+        lambda _settings, _config: writes.append("global-mcp"),
+    )
+
+    worker.run()
+
+    assert writes == ["user-gate", "global-mcp"]
+
+
+def test_user_action_gate_hook_rejects_invalid_existing_shape_without_overwrite(
+    tmp_path: Path,
+) -> None:
+    worker = InstallationWorker({})
+    settings_path = tmp_path / "settings.json"
+    original = json.dumps({"hooks": {"PreToolUse": {"not": "a list"}}})
+    settings_path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="PreToolUse"):
+        worker._update_claude_user_hooks(settings_path, tmp_path / "repo")
+
+    assert settings_path.read_text(encoding="utf-8") == original

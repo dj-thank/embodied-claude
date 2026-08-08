@@ -29,8 +29,9 @@ Sanpoloid の中央 action gate を Claude Code host に接続するため、Ant
 ## 今回の設計への反映
 
 - `.claude/settings.json` は `mcp__.*` を一つの `PreToolUse` adapter へ集約する。
-- `.claude/hooks/action-gate.sh` は project path、`uv`、gate process、decision shape の
-  failure を exit 2 に変換し、Claude Code に tool call を block させる。
+- Bash / PowerShell wrapper は policy path、`uv`、gate process、decision shape の failure
+  を exit 2 に変換し、Claude Code に tool call を block させる。PowerShell adapter は
+  redirected stdin、native process pipe、stdout を UTF-8 に固定する。
 - interactive outward action は `ask`、autonomous outward action は exact tool allowlist が
   なければ `deny` とする。
 - `autonomous-action.sh` は readable な explicit MCP config を必須とし、
@@ -39,8 +40,11 @@ Sanpoloid の中央 action gate を Claude Code host に接続するため、Ant
   process が失敗したとき、script 固有の preapproval だけで action が続く経路を作らない。
 - current host に Claude CLI がないため、`system/init` による server 接続確認、host
   timeout、wrapper 自体の起動不能を含む real Claude hook E2E は未検証のまま分離する。
-- project settings は repository 外の session には適用されない。installer が global MCP
-  config に登録する現在の経路を中央 gate へ接続する作業は別途必要である。
+- Installer は `action-policy` を先に同期し、既存 user hooks を保持しながら Sanpoloid の
+  5 server prefix だけを対象にする handler を `~/.claude/settings.json` へ追加した後で、
+  global MCP config を公開する。再実行は installer 所有 handler だけを置換する。
+- Local user settings を読まない cloud session、手動 global MCP config、disabled hook、
+  host timeout、wrapper 自体の起動不能は引き続き別の acceptance boundary である。
 
 ## 一次資料
 

@@ -57,10 +57,17 @@ class CompletePage(QWizardPage):
                 <li><strong>system-temperature</strong> - Body temperature sense</li>
             </ul>
 
+            <h3>Installed Action Gate</h3>
+            <p>
+                Sanpoloid MCP calls are routed through a user-scope PreToolUse gate.
+                Outward actions require confirmation by default.
+            </p>
+
             <h3>Troubleshooting</h3>
             <p>If you encounter issues:</p>
             <ul>
                 <li>Check <code>~/.claude.json</code> for MCP configuration</li>
+                <li>Check <code>~/.claude/settings.json</code> for the action gate hook</li>
                 <li>View logs with <code>claude --verbose</code></li>
                 <li>Report issues on
                     <a href="https://github.com/dj-thank/embodied-claude/issues">

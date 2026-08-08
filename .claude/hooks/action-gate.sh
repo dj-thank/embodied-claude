@@ -3,7 +3,12 @@ set -uo pipefail
 
 umask 077
 
-if [[ -z "${CLAUDE_PROJECT_DIR:-}" || ! -d "$CLAUDE_PROJECT_DIR/action-policy" ]]; then
+ACTION_POLICY_DIR="${1:-}"
+if [[ -z "$ACTION_POLICY_DIR" && -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
+  ACTION_POLICY_DIR="$CLAUDE_PROJECT_DIR/action-policy"
+fi
+
+if [[ -z "$ACTION_POLICY_DIR" || ! -d "$ACTION_POLICY_DIR" ]]; then
   echo "action gate project directory is unavailable" >&2
   exit 2
 fi
@@ -15,7 +20,7 @@ fi
 
 if ! output="$(
   uv run --locked --no-sync \
-    --directory "$CLAUDE_PROJECT_DIR/action-policy" \
+    --directory "$ACTION_POLICY_DIR" \
     embodied-action-gate 2>/dev/null
 )"; then
   echo "action gate evaluation failed" >&2

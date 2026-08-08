@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from action_policy import ActionGate
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -72,8 +74,55 @@ def test_hook_wrapper_converts_gate_startup_failure_to_blocking_exit() -> None:
     )
 
     assert "uv run --locked --no-sync" in wrapper
-    assert '"$CLAUDE_PROJECT_DIR/action-policy"' in wrapper
+    assert "${1:-}" in wrapper
     assert "exit 2" in wrapper
+
+    powershell_wrapper = (REPO_ROOT / ".claude/hooks/action-gate.ps1").read_text(
+        encoding="utf-8"
+    )
+    assert "ActionPolicyDirectory" in powershell_wrapper
+    assert "uv" in powershell_wrapper
+    assert "exit 2" in powershell_wrapper
+
+
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell wrapper is Windows-only")
+def test_powershell_wrapper_preserves_utf8_tool_input() -> None:
+    tool_input = {"content": "日本語の記憶", "tags": ["会話"]}
+    payload = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "mcp__memory__remember",
+            "tool_input": tool_input,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    expected_hash = ActionGate().evaluate(
+        "mcp__memory__remember", tool_input
+    ).input_sha256[:12]
+    env = {**os.environ, "EMBODIED_ACTION_MODE": "interactive"}
+
+    completed = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(REPO_ROOT / ".claude/hooks/action-gate.ps1"),
+            "-ActionPolicyDirectory",
+            str(REPO_ROOT / "action-policy"),
+        ],
+        input=payload,
+        capture_output=True,
+        check=False,
+        env=env,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr.decode(errors="replace")
+    result = json.loads(completed.stdout.decode("utf-8"))
+    reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+    assert f"input sha256={expected_hash}" in reason
 
 
 def test_autonomous_script_selects_noninteractive_policy_before_claude() -> None:

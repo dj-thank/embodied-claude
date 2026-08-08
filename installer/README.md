@@ -8,9 +8,15 @@ GUI installer for Embodied Claude MCP servers.
 - ✅ Wi-Fi PTZ camera configuration (Tapo)
 - ✅ USB webcam detection
 - ✅ Automatic MCP configuration (~/.claude.json)
-- ✅ Automatic dependency installation (uv sync)
-- ✅ Backup existing configuration
+- ✅ User-scope Sanpoloid action gate (~/.claude/settings.json)
+- ✅ Reproducible dependency installation (`uv sync --locked`)
+- ✅ Preserving, atomic settings merge with recoverable backups
 - ✅ Does not collect or store Claude authentication keys
+
+The installer syncs `action-policy` before exposing MCP servers globally. It then merges one
+`PreToolUse` hook for the five Sanpoloid MCP server prefixes while preserving existing user hooks.
+Re-running the installer replaces only its own prior handler. Local user hooks are not loaded by
+Claude Code cloud sessions, and an administrator can restrict user-managed hooks.
 
 ## Development
 

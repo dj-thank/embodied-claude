@@ -164,6 +164,8 @@ uv run --extra dev pytest -v       # テストが通ること
 ### Action gate
 
 - `.claude/settings.json` の `PreToolUse` hook は全 `mcp__.*` call を `action-policy` に通す。
+- GUI installer は global MCP config より先に `action-policy` を同期し、既存 user hook を
+  保持して Sanpoloid server 限定の user-scope gate を追加する。
 - 撮影・録音、camera motion、外向き発話、永続書込み、削除は対話時でも確認なしに実行しない。
 - Autonomous mode は exact tool allowlist 以外を拒否し、destructive action はallowlistにあっても拒否する。
 - 新しいMCP toolを追加・改名したら `action-policy` の明示分類と inventory contractを同時に更新する。

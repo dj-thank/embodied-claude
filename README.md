@@ -232,6 +232,11 @@ uv sync
 cd ..
 ```
 
+GUI installer を使う場合はこの同期を自動で行い、global `~/.claude.json` の Sanpoloid
+MCP server に対応する user-scope `PreToolUse` hook を `~/.claude/settings.json` へ
+既存 hook を保持したまま追加します。手動の project `.mcp.json` 構成では、repository の
+`.claude/settings.json` が gate を提供します。
+
 ## 使い方
 
 Claude Code を起動すると、自然言語でカメラを操作できる:

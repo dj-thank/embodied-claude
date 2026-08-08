@@ -2,7 +2,8 @@
 
 Claude Code の `PreToolUse` seam で、embodied MCP tool を中央分類して実行前に
 判定する host-side module です。各 MCP server の実装に依存せず、project の
-`.claude/settings.json` から全 `mcp__.*` call に適用されます。
+`.claude/settings.json` から全 `mcp__.*` call に適用されます。GUI installer は同じ gate を
+Sanpoloid の既知 server prefix に限定した user-scope hook としても登録します。
 
 ## 判定
 
@@ -49,11 +50,13 @@ uv run --extra dev ruff check .
 
 - これは host confirmation / exact-tool allowlist です。quiet hours、presence、privacy
   zone、rate limit、同時実行 lock、consent ledger はまだ実装していません。
-- Wrapper は project path、`uv`、gate process、decision shape の失敗を blocking exit 2 に
-  変換します。hook を無効化した host、project settings を読まない起動、wrapper 自体の
-  起動失敗、host timeout まで安全を証明するものではありません。
-- `.claude/settings.json` は project scope です。installer が `~/.claude.json` に登録した
-  MCP server を repository 外の session から使う経路には、この hook は適用されません。
+- Bash / PowerShell wrapper は policy path、`uv`、gate process、decision shape の失敗を
+  blocking exit 2 に変換します。PowerShell wrapper は redirected stdin と native process
+  pipe を UTF-8 に固定します。hook を無効化した host、wrapper 自体の起動失敗、host
+  timeout まで安全を証明するものではありません。
+- Installer の user hook は local machine の全 project に適用されますが、Claude Code の
+  cloud session は local user settings を読みません。手動で global MCP だけを登録した
+  構成にも自動では追加されません。
 - Autonomous allowlist は tool name を承認しますが、input constraint までは定義しません。
 - 将来の phone-side runtime は同じ分類と verdict interface を native host adapter から
   呼び出す必要があります。
