@@ -30,6 +30,8 @@ from .types import (
     MemoryStats,
     ScoredMemory,
     SensoryData,
+    _decode_string_tuple,
+    _encode_string_tuple,
 )
 from .working_memory import WorkingMemoryBuffer
 from .workspace import (
@@ -136,11 +138,9 @@ def calculate_final_score(
     return max(0.0, final)
 
 
-def _parse_linked_ids(linked_ids_str: str) -> tuple[str, ...]:
-    """カンマ区切りのlinked_ids文字列をタプルに変換。"""
-    if not linked_ids_str:
-        return ()
-    return tuple(id.strip() for id in linked_ids_str.split(",") if id.strip())
+def _parse_linked_ids(linked_ids_value: Any) -> tuple[str, ...]:
+    """linked_idsをJSONまたは旧comma形式から復元。"""
+    return _decode_string_tuple(linked_ids_value)
 
 
 def _parse_sensory_data(sensory_data_json: str) -> tuple[SensoryData, ...]:
@@ -165,11 +165,9 @@ def _parse_camera_position(camera_position_json: str) -> CameraPosition | None:
         return None
 
 
-def _parse_tags(tags_str: str) -> tuple[str, ...]:
-    """カンマ区切りのタグ文字列をタプルに変換。"""
-    if not tags_str:
-        return ()
-    return tuple(tag.strip() for tag in tags_str.split(",") if tag.strip())
+def _parse_tags(tags_value: Any) -> tuple[str, ...]:
+    """タグをJSONまたは旧comma形式から復元。"""
+    return _decode_string_tuple(tags_value)
 
 
 def _parse_links(links_json: str) -> tuple[MemoryLink, ...]:
@@ -760,7 +758,7 @@ class MemoryStore:
                 new_linked_ids = current_linked_ids + (other_id,)
                 new_metadata = {
                     **metadata,
-                    "linked_ids": ",".join(new_linked_ids),
+                    "linked_ids": _encode_string_tuple(new_linked_ids),
                 }
                 updates_ids.append(mem_id)
                 updates_metadatas.append(new_metadata)

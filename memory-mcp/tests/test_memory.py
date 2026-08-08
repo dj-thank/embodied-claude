@@ -73,6 +73,45 @@ class TestMemorySave:
         assert memory_low.importance == 1
         assert memory_high.importance == 5
 
+    @pytest.mark.asyncio
+    async def test_tags_round_trip_preserves_commas(
+        self, memory_store: MemoryStore
+    ):
+        """Tag values containing commas must survive persistent round trips."""
+        saved = await memory_store.save(
+            content="Comma-safe tags",
+            tags=("家族,友人", "重要"),
+        )
+
+        restored = await memory_store.get_by_id(saved.id)
+
+        assert restored is not None
+        assert restored.tags == saved.tags
+
+    @pytest.mark.asyncio
+    async def test_legacy_comma_metadata_remains_readable(
+        self, memory_store: MemoryStore
+    ):
+        """Existing comma-separated rows remain readable after the codec change."""
+        import asyncio
+
+        saved = await memory_store.save(content="Legacy metadata")
+        metadata = saved.to_metadata()
+        metadata["linked_ids"] = "legacy-one,legacy-two"
+        metadata["tags"] = "legacy,tag"
+        collection = memory_store._ensure_connected()
+        await asyncio.to_thread(
+            collection.update,
+            ids=[saved.id],
+            metadatas=[metadata],
+        )
+
+        restored = await memory_store.get_by_id(saved.id)
+
+        assert restored is not None
+        assert restored.linked_ids == ("legacy-one", "legacy-two")
+        assert restored.tags == ("legacy", "tag")
+
 
 class TestMemorySearch:
     """Tests for search_memories."""
@@ -366,17 +405,13 @@ class TestAutoLinking:
         # Save similar memory with auto-link
         mem2 = await memory_store.save_with_auto_link(
             content="カメラのパンチルト機能を実装",
-            link_threshold=1.5,  # Generous threshold
+            link_threshold=2.0,
         )
 
-        # Check that mem2 has link to mem1
-        assert len(mem2.linked_ids) > 0 or True  # May or may not link depending on similarity
-
-        # If linked, check bidirectional
-        if mem2.linked_ids:
-            mem1_updated = await memory_store.get_by_id(mem1.id)
-            assert mem1_updated is not None
-            assert mem2.id in mem1_updated.linked_ids
+        assert mem1.id in mem2.linked_ids
+        mem1_updated = await memory_store.get_by_id(mem1.id)
+        assert mem1_updated is not None
+        assert mem2.id in mem1_updated.linked_ids
 
     @pytest.mark.asyncio
     async def test_get_linked_memories(self, memory_store: MemoryStore):

@@ -5,6 +5,37 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+_STRING_TUPLE_JSON_PREFIX = "json:v1:"
+
+
+def _encode_string_tuple(values: tuple[str, ...]) -> str:
+    """Encode string tuples losslessly for scalar-only metadata stores."""
+    payload = json.dumps(list(values), ensure_ascii=False, separators=(",", ":"))
+    return f"{_STRING_TUPLE_JSON_PREFIX}{payload}"
+
+
+def _decode_string_tuple(value: Any) -> tuple[str, ...]:
+    """Decode JSON tuples while retaining legacy comma-separated metadata."""
+    if not value:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(item for item in value if isinstance(item, str))
+    if not isinstance(value, str):
+        return ()
+
+    if value.startswith(_STRING_TUPLE_JSON_PREFIX):
+        try:
+            decoded = json.loads(value.removeprefix(_STRING_TUPLE_JSON_PREFIX))
+        except (json.JSONDecodeError, TypeError):
+            return ()
+        if isinstance(decoded, list) and all(
+            isinstance(item, str) for item in decoded
+        ):
+            return tuple(decoded)
+        return ()
+
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
 
 class Emotion(str, Enum):
     """感情タグ."""
@@ -154,8 +185,8 @@ class Episode:
             "title": self.title,
             "start_time": self.start_time,
             "end_time": self.end_time or "",
-            "memory_ids": ",".join(self.memory_ids),
-            "participants": ",".join(self.participants),
+            "memory_ids": _encode_string_tuple(self.memory_ids),
+            "participants": _encode_string_tuple(self.participants),
             "location_context": self.location_context or "",
             "emotion": self.emotion,
             "importance": self.importance,
@@ -171,14 +202,8 @@ class Episode:
             title=metadata["title"],
             start_time=metadata["start_time"],
             end_time=metadata.get("end_time") or None,
-            memory_ids=tuple(
-                metadata["memory_ids"].split(",") if metadata.get("memory_ids") else []
-            ),
-            participants=tuple(
-                metadata["participants"].split(",")
-                if metadata.get("participants")
-                else []
-            ),
+            memory_ids=_decode_string_tuple(metadata.get("memory_ids")),
+            participants=_decode_string_tuple(metadata.get("participants")),
             location_context=metadata.get("location_context") or None,
             summary=summary,
             emotion=metadata["emotion"],
@@ -225,7 +250,7 @@ class Memory:
             "category": self.category,
             "access_count": self.access_count,
             "last_accessed": self.last_accessed,
-            "linked_ids": ",".join(self.linked_ids),
+            "linked_ids": _encode_string_tuple(self.linked_ids),
             # Phase 4 フィールド
             "episode_id": self.episode_id or "",
             "sensory_data": json.dumps([s.to_dict() for s in self.sensory_data]),
@@ -234,7 +259,7 @@ class Memory:
                 if self.camera_position
                 else ""
             ),
-            "tags": ",".join(self.tags),
+            "tags": _encode_string_tuple(self.tags),
             # Phase 5: 因果リンク
             "links": json.dumps([link.to_dict() for link in self.links]),
             # Phase 6: 発散想起・予測符号化

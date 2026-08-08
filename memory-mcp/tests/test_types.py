@@ -194,8 +194,8 @@ class TestEpisode:
         assert metadata["title"] == "Test Episode"
         assert metadata["start_time"] == "2026-02-01T10:00:00+00:00"
         assert metadata["end_time"] == "2026-02-01T11:00:00+00:00"
-        assert metadata["memory_ids"] == "m1,m2"
-        assert metadata["participants"] == "Alice,Bob"
+        assert metadata["memory_ids"] == 'json:v1:["m1","m2"]'
+        assert metadata["participants"] == 'json:v1:["Alice","Bob"]'
         assert metadata["location_context"] == "Room"
         assert metadata["emotion"] == "happy"
         assert metadata["importance"] == 4
@@ -225,6 +225,45 @@ class TestEpisode:
         assert episode.participants == ("User",)
         assert episode.summary == "Generated summary"
 
+    def test_episode_metadata_round_trip_preserves_commas(self):
+        """Episode lists must remain lossless when values contain commas."""
+        episode = Episode(
+            id="ep-comma",
+            title="Comma-safe episode",
+            start_time="2026-08-09T00:00:00+00:00",
+            end_time=None,
+            memory_ids=("memory,one", "memory-two"),
+            participants=("姓, 名", "Bob"),
+            location_context=None,
+            summary="Lossless metadata",
+            emotion="neutral",
+            importance=3,
+        )
+
+        restored = Episode.from_metadata(
+            id=episode.id,
+            summary=episode.summary,
+            metadata=episode.to_metadata(),
+        )
+
+        assert restored.memory_ids == episode.memory_ids
+        assert restored.participants == episode.participants
+
+    def test_episode_legacy_json_like_value_is_not_reinterpreted(self):
+        """Unversioned legacy strings keep their original comma semantics."""
+        metadata = {
+            "title": "Legacy-looking episode",
+            "start_time": "2026-08-09T00:00:00+00:00",
+            "memory_ids": "memory-one",
+            "participants": '["literal legacy value"]',
+            "emotion": "neutral",
+            "importance": 3,
+        }
+
+        episode = Episode.from_metadata("ep-legacy", "summary", metadata)
+
+        assert episode.participants == ('["literal legacy value"]',)
+
     def test_episode_with_none_end_time(self):
         """Test episode with None end_time (ongoing)."""
         episode = Episode(
@@ -244,6 +283,7 @@ class TestEpisode:
 
         assert metadata["end_time"] == ""
         assert metadata["location_context"] == ""
+        assert metadata["participants"] == "json:v1:[]"
 
 
 class TestMemoryPhase4Fields:
@@ -354,4 +394,4 @@ class TestMemoryPhase4Fields:
         assert metadata["episode_id"] == "ep1"
         assert "sensory_data" in metadata  # JSON string
         assert "camera_position" in metadata  # JSON string
-        assert metadata["tags"] == "test,phase4"
+        assert metadata["tags"] == 'json:v1:["test","phase4"]'
