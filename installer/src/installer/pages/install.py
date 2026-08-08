@@ -1,16 +1,17 @@
 """Installation page"""
 import json
-import os
+import shutil
 import subprocess
 from pathlib import Path
-from PyQt6.QtWidgets import (
-    QWizardPage,
-    QVBoxLayout,
-    QLabel,
-    QTextEdit,
-    QProgressBar,
-)
+
 from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtWidgets import (
+    QLabel,
+    QProgressBar,
+    QTextEdit,
+    QVBoxLayout,
+    QWizardPage,
+)
 
 
 class InstallationWorker(QThread):
@@ -42,47 +43,40 @@ class InstallationWorker(QThread):
             self.progress.emit("\n📝 Creating MCP configuration...")
             mcp_config = self._create_mcp_config(repo_path)
 
-            # Write to Claude Code configuration
+            # Install dependencies for each enabled MCP server
+            projects = [("system-temperature-mcp", repo_path / "system-temperature-mcp")]
+            if self.config.get("wifi_camera_enabled"):
+                projects.insert(0, ("wifi-cam-mcp", repo_path / "wifi-cam-mcp"))
+
+            if self.config.get("usb_camera_enabled"):
+                projects.insert(0, ("usb-webcam-mcp", repo_path / "usb-webcam-mcp"))
+
+            if self.config.get("memory_enabled"):
+                projects.insert(0, ("memory-mcp", repo_path / "memory-mcp"))
+
+            for project_name, project_path in projects:
+                if not project_path.exists():
+                    raise FileNotFoundError(f"{project_name} directory not found at {project_path}")
+                self.progress.emit(f"\n📦 Installing {project_name} dependencies...")
+                self._run_uv_sync(project_path)
+
+            # Write to Claude Code configuration only after all project installs succeed.
             settings_path = Path.home() / ".claude.json"
             self.progress.emit(f"💾 Writing to: {settings_path}")
 
-            # Backup existing config
             if settings_path.exists():
                 backup_path = settings_path.with_suffix(".json.backup")
                 self.progress.emit(f"💾 Creating backup: {backup_path}")
-                import shutil
                 shutil.copy2(settings_path, backup_path)
 
             self._update_claude_settings(settings_path, mcp_config)
             self.progress.emit("✅ MCP configuration updated")
 
-            # Install dependencies for each enabled MCP server
-            if self.config.get("wifi_camera_enabled"):
-                self.progress.emit("\n📦 Installing wifi-cam-mcp dependencies...")
-                wifi_cam_path = repo_path / "wifi-cam-mcp"
-                if not wifi_cam_path.exists():
-                    raise Exception(f"wifi-cam-mcp directory not found at {wifi_cam_path}")
-                self._run_uv_sync(wifi_cam_path)
-
-            if self.config.get("usb_camera_enabled"):
-                self.progress.emit("\n📦 Installing usb-webcam-mcp dependencies...")
-                usb_cam_path = repo_path / "usb-webcam-mcp"
-                if not usb_cam_path.exists():
-                    raise Exception(f"usb-webcam-mcp directory not found at {usb_cam_path}")
-                self._run_uv_sync(usb_cam_path)
-
-            if self.config.get("memory_enabled"):
-                self.progress.emit("\n📦 Installing memory-mcp dependencies...")
-                memory_path = repo_path / "memory-mcp"
-                if not memory_path.exists():
-                    raise Exception(f"memory-mcp directory not found at {memory_path}")
-                self._run_uv_sync(memory_path)
-
             self.progress.emit("\n✅ Installation completed successfully!")
             self.finished.emit(True, "Installation completed")
 
-        except Exception as e:
-            error_msg = f"Installation failed: {str(e)}"
+        except Exception as e:  # noqa: BLE001 - surface worker failures to the UI
+            error_msg = f"Installation failed: {e!s}"
             self.progress.emit(f"\n❌ {error_msg}")
             self.finished.emit(False, error_msg)
 
@@ -96,9 +90,9 @@ class InstallationWorker(QThread):
                 "type": "stdio",
                 "command": "uv",
                 "args": [
+                    "run",
                     "--directory",
                     str(repo_path / "wifi-cam-mcp"),
-                    "run",
                     "wifi-cam-mcp",
                 ],
                 "env": {
@@ -114,9 +108,9 @@ class InstallationWorker(QThread):
                 "type": "stdio",
                 "command": "uv",
                 "args": [
+                    "run",
                     "--directory",
                     str(repo_path / "usb-webcam-mcp"),
-                    "run",
                     "usb-webcam-mcp",
                 ],
                 "env": {}
@@ -128,9 +122,9 @@ class InstallationWorker(QThread):
                 "type": "stdio",
                 "command": "uv",
                 "args": [
+                    "run",
                     "--directory",
                     str(repo_path / "memory-mcp"),
-                    "run",
                     "memory-mcp",
                 ],
                 "env": {}
@@ -141,9 +135,9 @@ class InstallationWorker(QThread):
             "type": "stdio",
             "command": "uv",
             "args": [
+                "run",
                 "--directory",
                 str(repo_path / "system-temperature-mcp"),
-                "run",
                 "system-temperature-mcp",
             ],
             "env": {}
@@ -158,7 +152,7 @@ class InstallationWorker(QThread):
         # Load existing settings
         existing = {}
         if settings_path.exists():
-            with open(settings_path, "r") as f:
+            with open(settings_path, "r", encoding="utf-8") as f:
                 existing = json.load(f)
 
         # Merge MCP servers
@@ -168,8 +162,8 @@ class InstallationWorker(QThread):
         existing["mcpServers"].update(mcp_config["mcpServers"])
 
         # Write back
-        with open(settings_path, "w") as f:
-            json.dump(existing, f, indent=2)
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
 
     def _run_uv_sync(self, directory):
         """Run uv sync in a directory"""
@@ -177,7 +171,7 @@ class InstallationWorker(QThread):
 
         # Ensure directory exists
         if not directory.exists():
-            raise Exception(f"Directory does not exist: {directory}")
+            raise FileNotFoundError(f"Directory does not exist: {directory}")
 
         try:
             result = subprocess.run(
@@ -186,14 +180,15 @@ class InstallationWorker(QThread):
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minutes timeout
+                check=False,
             )
 
             if result.returncode != 0:
-                raise Exception(f"uv sync failed in {directory.name}: {result.stderr}")
+                raise RuntimeError(f"uv sync failed in {directory.name}: {result.stderr}")
 
             self.progress.emit(result.stdout)
         except subprocess.TimeoutExpired:
-            raise Exception(f"uv sync timed out in {directory.name}")
+            raise RuntimeError(f"uv sync timed out in {directory.name}") from None
 
 
 class InstallationPage(QWizardPage):
@@ -237,7 +232,6 @@ class InstallationPage(QWizardPage):
             "tapo_password": self.field("tapo_password"),
             "usb_camera_enabled": self.field("usb_camera_enabled"),
             "memory_enabled": self.field("memory_enabled"),
-            "api_key": self.field("api_key"),
         }
 
         # Start installation

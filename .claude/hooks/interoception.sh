@@ -1,12 +1,12 @@
 #!/bin/bash
-# interoception.sh - AIの内受容感覚（interoception）
+# interoception.sh - AIの内受容感覚(interoception)
 # UserPromptSubmitフックで毎ターン実行される
 # heartbeat-daemon.sh が書き出した state file を読んでコンテキストに注入する
 # 自前で計測せず、読み取り→整形→出力するだけの軽量版
 
 STATE_FILE="/tmp/interoception_state.json"
 
-# state file がなければフォールバック（デーモン未起動時）
+# state file がなければフォールバック(デーモン未起動時)
 if [ ! -f "$STATE_FILE" ]; then
     CURRENT_TIME=$(date '+%H:%M:%S')
     echo "[interoception] time=${CURRENT_TIME} (heartbeat daemon not running)"

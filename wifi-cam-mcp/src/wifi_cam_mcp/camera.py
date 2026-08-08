@@ -4,11 +4,14 @@ import asyncio
 import base64
 import io
 import logging
+import math
+import re
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from urllib.parse import quote
 
 from PIL import Image
 
@@ -89,6 +92,28 @@ def _degrees_to_normalized_pan(degrees: float) -> float:
 def _degrees_to_normalized_tilt(degrees: float) -> float:
     """Convert degrees to ONVIF normalized tilt value."""
     return max(-1.0, min(1.0, degrees / TILT_RANGE_DEGREES))
+
+
+def _normalize_duration(duration: float) -> float:
+    """Validate an audio capture duration accepted by the MCP tool."""
+    try:
+        value = float(duration)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("duration must be a number") from exc
+
+    if not math.isfinite(value) or not 1.0 <= value <= 30.0:
+        raise ValueError("duration must be between 1 and 30 seconds")
+    return value
+
+
+def _redact_credentials(message: str) -> str:
+    """Remove credentials from URLs before an error reaches logs or MCP clients."""
+    message = re.sub(
+        r"(?i)(rtsp://[^/\s:@]+:)[^@\s]+@",
+        r"\1<redacted>@",
+        message,
+    )
+    return re.sub(r"(?i)(tapo://)[^@\s]+@", r"\1<redacted>@", message)
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +325,7 @@ class TapoCamera:
         image.save(buffer, format="JPEG", quality=85)
         image_base64 = base64.standard_b64encode(buffer.getvalue()).decode("utf-8")
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         file_path = None
 
         if save_to_file:
@@ -371,10 +396,13 @@ class TapoCamera:
                 )
             except asyncio.TimeoutError:
                 process.kill()
+                await process.wait()
                 raise RuntimeError("RTSP capture timed out after 10s")
 
             if process.returncode != 0:
-                stderr_msg = stderr_data.decode(errors="replace").strip()[-500:]
+                stderr_msg = _redact_credentials(
+                    stderr_data.decode(errors="replace").strip()[-500:]
+                )
                 raise RuntimeError(
                     f"ffmpeg RTSP capture failed (rc={process.returncode}): {stderr_msg}"
                 )
@@ -394,9 +422,14 @@ class TapoCamera:
         if self._config.stream_url:
             return self._config.stream_url
         stream = "stream2" if sub_stream else "stream1"
+        username = quote(self._config.username, safe="")
+        password = quote(self._config.password, safe="")
+        host = self._config.host
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
         return (
-            f"rtsp://{self._config.username}:{self._config.password}"
-            f"@{self._config.host}:554/{stream}"
+            f"rtsp://{username}:{password}"
+            f"@{host}:554/{stream}"
         )
 
     # ------------------------------------------------------------------
@@ -543,26 +576,47 @@ class TapoCamera:
             List of CaptureResults from different angles
         """
         captures: list[CaptureResult] = []
+        completed_moves: list[tuple[Direction, int]] = []
+        finished = False
 
-        center = await self.capture_image()
-        captures.append(center)
+        async def move_and_record(direction: Direction, degrees: int) -> None:
+            result = await self.move(direction, degrees)
+            if not result.success:
+                raise RuntimeError(result.message)
+            completed_moves.append((direction, degrees))
 
-        await self.pan_left(45)
-        left = await self.capture_image()
-        captures.append(left)
+        try:
+            center = await self.capture_image()
+            captures.append(center)
 
-        await self.pan_right(90)
-        right = await self.capture_image()
-        captures.append(right)
+            await move_and_record(Direction.LEFT, 45)
+            left = await self.capture_image()
+            captures.append(left)
 
-        await self.pan_left(45)
-        await self.tilt_up(20)
-        up = await self.capture_image()
-        captures.append(up)
+            await move_and_record(Direction.RIGHT, 90)
+            right = await self.capture_image()
+            captures.append(right)
 
-        await self.tilt_down(20)
+            await move_and_record(Direction.LEFT, 45)
+            await move_and_record(Direction.UP, 20)
+            up = await self.capture_image()
+            captures.append(up)
 
-        return captures
+            await move_and_record(Direction.DOWN, 20)
+            finished = True
+            return captures
+        finally:
+            if not finished:
+                reverse = {
+                    Direction.LEFT: Direction.RIGHT,
+                    Direction.RIGHT: Direction.LEFT,
+                    Direction.UP: Direction.DOWN,
+                    Direction.DOWN: Direction.UP,
+                }
+                for direction, degrees in reversed(completed_moves):
+                    result = await self.move(reverse[direction], degrees)
+                    if not result.success:
+                        logger.warning("Failed to restore camera position: %s", result.message)
 
     # ------------------------------------------------------------------
     # Device info & presets
@@ -605,6 +659,7 @@ class TapoCamera:
                 }
             )
             await asyncio.sleep(1)
+            self.reset_position_tracking()
             return MoveResult(
                 direction=Direction.LEFT,
                 degrees=0,
@@ -633,11 +688,13 @@ class TapoCamera:
         Returns:
             AudioResult with base64 encoded audio and optional transcript
         """
+        duration = _normalize_duration(duration)
         await self._ensure_connected()
 
         rtsp_url = self._get_rtsp_url()
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._capture_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         file_path = str(self._capture_dir / f"audio_{timestamp}.wav")
 
         try:
@@ -663,9 +720,24 @@ class TapoCamera:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
             )
-            await asyncio.wait_for(process.wait(), timeout=duration + 10.0)
+            try:
+                _, stderr_data = await asyncio.wait_for(
+                    process.communicate(), timeout=duration + 10.0
+                )
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise RuntimeError(f"Audio capture timed out after {duration:g}s")
+
+            if process.returncode != 0:
+                stderr_msg = _redact_credentials(
+                    stderr_data.decode(errors="replace").strip()[-500:]
+                )
+                raise RuntimeError(
+                    f"ffmpeg audio capture failed (rc={process.returncode}): {stderr_msg}"
+                )
 
             with open(file_path, "rb") as f:
                 audio_data = f.read()
@@ -684,7 +756,8 @@ class TapoCamera:
                 transcript=transcript,
             )
         except Exception as e:
-            raise RuntimeError(f"Failed to record audio: {e!s}") from e
+            Path(file_path).unlink(missing_ok=True)
+            raise RuntimeError(f"Failed to record audio: {_redact_credentials(str(e))}") from e
 
     async def _transcribe_audio(self, audio_path: str) -> str | None:
         """Transcribe audio file using OpenAI Whisper.

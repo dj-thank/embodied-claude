@@ -37,7 +37,10 @@ def _collect_audio_bytes(audio: Any) -> bytes:
 def _output_extension(output_format: str) -> str:
     if not output_format:
         return "mp3"
-    return output_format.split("_", 1)[0]
+    extension = output_format.split("_", 1)[0].lower()
+    if not re.fullmatch(r"[a-z0-9]+", extension):
+        raise ValueError("output_format must produce a safe file extension")
+    return extension
 
 
 def _save_audio(audio_bytes: bytes, output_format: str, save_dir: str) -> str:
@@ -52,7 +55,7 @@ def _save_audio(audio_bytes: bytes, output_format: str, save_dir: str) -> str:
 
 def _split_sentences(text: str) -> list[str]:
     """Split text into sentences for stable TTS generation."""
-    parts = re.split(r'(?<=[。！？!?.])\s*', text)
+    parts = re.split(r"(?<=[。！？!?.])\s*", text)
     return [p.strip() for p in parts if p.strip()]
 
 

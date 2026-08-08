@@ -27,7 +27,7 @@ class EpisodeManager:
         """Initialize episode manager.
 
         Args:
-            memory_store: MemoryStoreインスタンス（記憶の取得・更新用）
+            memory_store: MemoryStoreインスタンス(記憶の取得・更新用)
             collection: episodesコレクション
         """
         self._memory_store = memory_store
@@ -46,8 +46,8 @@ class EpisodeManager:
         Args:
             title: エピソードのタイトル
             memory_ids: 含める記憶のIDリスト
-            participants: 関与した人物（例: ["幼馴染"]）
-            auto_summarize: 自動でサマリー生成（全記憶を結合）
+            participants: 関与した人物(例: ["幼馴染"])
+            auto_summarize: 自動でサマリー生成(全記憶を結合)
 
         Returns:
             作成されたEpisode
@@ -103,7 +103,7 @@ class EpisodeManager:
         return episode
 
     async def _save_episode(self, episode: Episode) -> None:
-        """エピソードをChromaDBに保存（内部用）.
+        """エピソードをChromaDBに保存(内部用).
 
         Args:
             episode: 保存するエピソード
@@ -121,7 +121,7 @@ class EpisodeManager:
         query: str,
         n_results: int = 5,
     ) -> list[Episode]:
-        """エピソードを検索（サマリーでsemantic search）.
+        """エピソードを検索(サマリーでsemantic search).
 
         Args:
             query: 検索クエリ
@@ -192,7 +192,7 @@ class EpisodeManager:
             episode_id: エピソードID
 
         Returns:
-            記憶のリスト（時系列順）
+            記憶のリスト(時系列順)
 
         Raises:
             ValueError: エピソードが見つからない場合
@@ -213,7 +213,7 @@ class EpisodeManager:
         """全エピソードを取得.
 
         Returns:
-            全エピソードのリスト（新しい順）
+            全エピソードのリスト(新しい順)
         """
         async with self._lock:
             results = await asyncio.to_thread(
@@ -234,13 +234,13 @@ class EpisodeManager:
                 )
                 episodes.append(episode)
 
-        # 開始時刻で降順ソート（新しい順）
+        # 開始時刻で降順ソート(新しい順)
         episodes.sort(key=lambda e: e.start_time, reverse=True)
 
         return episodes
 
     async def delete_episode(self, episode_id: str) -> None:
-        """エピソードを削除（記憶は削除しない）.
+        """エピソードを削除(記憶は削除しない).
 
         Args:
             episode_id: 削除するエピソードID

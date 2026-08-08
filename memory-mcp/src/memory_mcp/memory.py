@@ -60,12 +60,12 @@ def calculate_time_decay(
     時間減衰係数を計算。
 
     Args:
-        timestamp: 記憶のタイムスタンプ（ISO 8601形式）
-        now: 現在時刻（省略時は現在）
-        half_life_days: 半減期（日数）
+        timestamp: 記憶のタイムスタンプ(ISO 8601形式)
+        now: 現在時刻(省略時は現在)
+        half_life_days: 半減期(日数)
 
     Returns:
-        0.0（完全に忘却）〜 1.0（新鮮な記憶）
+        0.0(完全に忘却)〜 1.0(新鮮な記憶)
     """
     if now is None:
         now = datetime.now()
@@ -115,18 +115,18 @@ def calculate_final_score(
     importance_weight: float = 0.2,
 ) -> float:
     """
-    最終スコアを計算。低いほど「良い」（想起されやすい）。
+    最終スコアを計算。低いほど「良い」(想起されやすい)。
 
     Args:
-        semantic_distance: ChromaDBからの距離（0〜2くらい）
-        time_decay: 時間減衰係数（0.0〜1.0）
+        semantic_distance: ChromaDBからの距離(0〜2くらい)
+        time_decay: 時間減衰係数(0.0〜1.0)
         emotion_boost: 感情ブースト
         importance_boost: 重要度ブースト
 
     Returns:
-        最終スコア（低いほど良い）
+        最終スコア(低いほど良い)
     """
-    # 時間減衰ペナルティ：新しい記憶ほど有利
+    # 時間減衰ペナルティ:新しい記憶ほど有利
     decay_penalty = (1.0 - time_decay) * decay_weight
 
     # ブーストは距離を減らす方向
@@ -233,7 +233,7 @@ def _memory_from_metadata(
     content: str,
     metadata: dict[str, Any],
 ) -> Memory:
-    """メタデータからMemoryオブジェクトを作成（Phase 4対応）。"""
+    """メタデータからMemoryオブジェクトを作成(Phase 4対応)。"""
     # episode_idの処理: 空文字列もNoneとして扱う
     episode_id_raw = metadata.get("episode_id", "")
     episode_id = episode_id_raw if episode_id_raw else None
@@ -269,7 +269,9 @@ class MemoryStore:
 
     def __init__(self, config: MemoryConfig):
         self._config = config
-        self._client: chromadb.PersistentClient | None = None
+        # PersistentClient and EphemeralClient share the same public methods,
+        # but older Chroma releases do not expose one common public type alias.
+        self._client: Any | None = None
         self._collection: chromadb.Collection | None = None  # claude_memories
         self._episodes_collection: chromadb.Collection | None = None  # Phase 4
         self._lock = asyncio.Lock()
@@ -283,10 +285,13 @@ class MemoryStore:
         """Initialize ChromaDB connection (Phase 4: with episodes collection)."""
         async with self._lock:
             if self._client is None:
-                self._client = await asyncio.to_thread(
-                    chromadb.PersistentClient,
-                    path=self._config.db_path,
-                )
+                if self._config.db_path == ":memory:":
+                    self._client = await asyncio.to_thread(chromadb.EphemeralClient)
+                else:
+                    self._client = await asyncio.to_thread(
+                        chromadb.PersistentClient,
+                        path=self._config.db_path,
+                    )
                 # Phase 3: メインの記憶コレクション
                 self._collection = await asyncio.to_thread(
                     self._client.get_or_create_collection,
@@ -520,14 +525,14 @@ class MemoryStore:
             n_results: 最大結果数
             use_time_decay: 時間減衰を適用するか
             use_emotion_boost: 感情ブーストを適用するか
-            decay_half_life_days: 時間減衰の半減期（日数）
+            decay_half_life_days: 時間減衰の半減期(日数)
             emotion_filter: 感情フィルタ
             category_filter: カテゴリフィルタ
             date_from: 開始日フィルタ
             date_to: 終了日フィルタ
 
         Returns:
-            スコアリング済み検索結果（final_score昇順）
+            スコアリング済み検索結果(final_score昇順)
         """
         collection = self._ensure_connected()
 
@@ -612,7 +617,7 @@ class MemoryStore:
 
     async def update_access(self, memory_id: str) -> None:
         """
-        アクセス情報を更新（access_count++, last_accessed更新）。
+        アクセス情報を更新(access_count++, last_accessed更新)。
 
         Args:
             memory_id: 更新する記憶のID
@@ -685,7 +690,7 @@ class MemoryStore:
         target_id: str,
     ) -> None:
         """
-        双方向リンクを追加（A→BとB→A両方）。
+        双方向リンクを追加(A→BとB→A両方)。
 
         Args:
             source_id: リンク元の記憶ID
@@ -756,7 +761,7 @@ class MemoryStore:
         Args:
             content: 記憶の内容
             emotion: 感情タグ
-            importance: 重要度（1-5）
+            importance: 重要度(1-5)
             category: カテゴリ
             link_threshold: この距離以下の既存記憶にリンク
             max_links: 最大リンク数
@@ -819,10 +824,10 @@ class MemoryStore:
 
         Args:
             memory_id: 起点の記憶ID
-            depth: 何段階先まで辿るか（1-5）
+            depth: 何段階先まで辿るか(1-5)
 
         Returns:
-            リンクされた記憶のリスト（起点は含まない）
+            リンクされた記憶のリスト(起点は含まない)
         """
         depth = max(1, min(5, depth))
 
@@ -891,7 +896,7 @@ class MemoryStore:
                     seen_ids.add(mem.id)
                     linked_memories.append(mem)
 
-        # リンク先をMemorySearchResultに変換（距離は仮の値）
+        # リンク先をMemorySearchResultに変換(距離は仮の値)
         linked_results = [
             MemorySearchResult(memory=mem, distance=999.0)
             for mem in linked_memories
@@ -929,7 +934,7 @@ class MemoryStore:
             memory_ids: 取得する記憶のIDリスト
 
         Returns:
-            記憶のリスト（IDの順序は保証されない）
+            記憶のリスト(IDの順序は保証されない)
         """
         if not memory_ids:
             return []
@@ -997,7 +1002,7 @@ class MemoryStore:
         Args:
             min_importance: 最小重要度
             min_access_count: 最小アクセス回数
-            since: この日時以降にアクセスされた記憶（ISO 8601）
+            since: この日時以降にアクセスされた記憶(ISO 8601)
             n_results: 最大取得数
 
         Returns:
@@ -1017,7 +1022,7 @@ class MemoryStore:
         where: dict[str, Any] = {"$and": where_conditions}
 
         # 全記憶を取得してフィルタ
-        # （ChromaDBのget()はwhereフィルタをサポート）
+        # (ChromaDBのget()はwhereフィルタをサポート)
         results = await asyncio.to_thread(
             collection.get,
             where=where,
@@ -1039,7 +1044,7 @@ class MemoryStore:
         return memories[:n_results]
 
     async def get_all(self) -> list[Memory]:
-        """全記憶を取得（カメラ位置検索用）.
+        """全記憶を取得(カメラ位置検索用).
 
         Returns:
             全記憶のリスト
@@ -1071,13 +1076,13 @@ class MemoryStore:
         link_type: str = "caused_by",
         note: str | None = None,
     ) -> None:
-        """因果リンクを追加（単方向）.
+        """因果リンクを追加(単方向).
 
         Args:
             source_id: リンク元の記憶ID
             target_id: リンク先の記憶ID
             link_type: リンクタイプ ("caused_by", "leads_to", "related", "similar")
-            note: リンクの説明（任意）
+            note: リンクの説明(任意)
         """
         collection = self._ensure_connected()
 
@@ -1099,7 +1104,7 @@ class MemoryStore:
             note=note,
         )
 
-        # 既存のリンクに追加（重複チェック）
+        # 既存のリンクに追加(重複チェック)
         existing_links = list(source_memory.links)
         for link in existing_links:
             if link.target_id == target_id and link.link_type == link_type:
@@ -1134,7 +1139,7 @@ class MemoryStore:
         Args:
             memory_id: 起点の記憶ID
             direction: "backward" (原因を辿る) or "forward" (結果を辿る)
-            max_depth: 最大深度（1-5）
+            max_depth: 最大深度(1-5)
 
         Returns:
             [(Memory, link_type), ...] の形式

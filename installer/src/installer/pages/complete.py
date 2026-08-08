@@ -1,11 +1,10 @@
 """Completion page"""
 from PyQt6.QtWidgets import (
-    QWizardPage,
-    QVBoxLayout,
     QLabel,
     QTextBrowser,
+    QVBoxLayout,
+    QWizardPage,
 )
-from PyQt6.QtCore import Qt
 
 
 class CompletePage(QWizardPage):
@@ -36,14 +35,14 @@ class CompletePage(QWizardPage):
                 <li><strong>Restart Claude Code</strong> to load the new MCP servers</li>
                 <li><strong>Test your setup:</strong>
                     <ul>
-                        <li>"今何が見える？" (What do you see now?)</li>
+                        <li>"今何が見える?" (What do you see now?)</li>
                         <li>"左を見て" (Look left)</li>
-                        <li>"何か聞こえる？" (Do you hear anything?)</li>
-                        <li>"これ覚えておいて：..." (Remember this: ...)</li>
+                        <li>"何か聞こえる?" (Do you hear anything?)</li>
+                        <li>"これ覚えておいて:..." (Remember this: ...)</li>
                     </ul>
                 </li>
                 <li><strong>Check the documentation:</strong>
-                    <a href="https://github.com/kmizu/embodied-claude">
+                    <a href="https://github.com/dj-thank/embodied-claude">
                     GitHub Repository
                     </a>
                 </li>
@@ -52,7 +51,8 @@ class CompletePage(QWizardPage):
             <h3>Installed MCP Servers</h3>
             <p>Your Claude Code now has access to:</p>
             <ul>
-                <li><strong>wifi-cam</strong> - Eyes, neck, ears (Wi-Fi camera)</li>
+                <li><strong>wifi-cam</strong> - Eyes, neck, ears (Wi-Fi camera, if selected)</li>
+                <li><strong>usb-webcam</strong> - Eyes (USB webcam, if selected)</li>
                 <li><strong>memory</strong> - Long-term memory (ChromaDB)</li>
                 <li><strong>system-temperature</strong> - Body temperature sense</li>
             </ul>
@@ -60,10 +60,10 @@ class CompletePage(QWizardPage):
             <h3>Troubleshooting</h3>
             <p>If you encounter issues:</p>
             <ul>
-                <li>Check <code>~/.claude/settings.json</code> for MCP configuration</li>
+                <li>Check <code>~/.claude.json</code> for MCP configuration</li>
                 <li>View logs with <code>claude --verbose</code></li>
                 <li>Report issues on
-                    <a href="https://github.com/kmizu/embodied-claude/issues">
+                    <a href="https://github.com/dj-thank/embodied-claude/issues">
                     GitHub Issues
                     </a>
                 </li>

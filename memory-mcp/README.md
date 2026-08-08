@@ -92,7 +92,7 @@ Get statistics about stored memories.
 
 ## Claude Code Integration
 
-Add to your `~/.claude/settings.json`:
+Add to your `~/.claude.json`:
 
 ```json
 {
@@ -112,10 +112,10 @@ Add to your `~/.claude/settings.json`:
 uv sync --all-extras
 
 # Run tests
-uv run pytest
+uv run --extra dev pytest
 
 # Lint
-uv run ruff check src/
+uv run --extra dev ruff check .
 ```
 
 ## License

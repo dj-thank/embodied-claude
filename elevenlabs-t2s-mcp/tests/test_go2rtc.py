@@ -107,6 +107,20 @@ class TestGenerateConfig:
         )
         assert config_path.exists()
 
+    def test_escapes_credentials_in_urls(self, tmp_path):
+        config_path = tmp_path / "go2rtc.yaml"
+
+        generate_config(
+            config_path=config_path,
+            stream_name="cam",
+            camera_host="10.0.0.1",
+            username="user@example",
+            password="p@ss:word/with spaces",
+        )
+
+        content = config_path.read_text()
+        assert "user%40example:p%40ss%3Aword%2Fwith%20spaces@10.0.0.1" in content
+
     def test_overwrites_existing(self, tmp_path):
         config_path = tmp_path / "go2rtc.yaml"
         config_path.write_text("old content")

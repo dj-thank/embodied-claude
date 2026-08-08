@@ -3,15 +3,14 @@ Embodied Claude Installer
 GUI installer for setting up Embodied Claude MCP servers
 """
 import sys
-from PyQt6.QtWidgets import QApplication, QWizard
-from PyQt6.QtCore import Qt
 
-from .pages.welcome import WelcomePage
-from .pages.dependencies import DependenciesPage
+from PyQt6.QtWidgets import QApplication, QWizard
+
 from .pages.camera import CameraSelectionPage
-from .pages.api_key import ApiKeyPage
-from .pages.install import InstallationPage
 from .pages.complete import CompletePage
+from .pages.dependencies import DependenciesPage
+from .pages.install import InstallationPage
+from .pages.welcome import WelcomePage
 
 
 class EmbodiedClaudeInstaller(QWizard):
@@ -28,7 +27,6 @@ class EmbodiedClaudeInstaller(QWizard):
         self.addPage(WelcomePage())
         self.addPage(DependenciesPage())
         self.addPage(CameraSelectionPage())
-        self.addPage(ApiKeyPage())
         self.addPage(InstallationPage())
         self.addPage(CompletePage())
 

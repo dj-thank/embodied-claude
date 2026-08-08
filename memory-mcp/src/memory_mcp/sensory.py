@@ -34,16 +34,16 @@ class SensoryIntegration:
         category: str = "observation",
         auto_describe: bool = False,
     ) -> Memory:
-        """視覚記憶を保存（画像パス + カメラ位置）.
+        """視覚記憶を保存(画像パス + カメラ位置).
 
         Args:
-            content: 記憶の内容（例: "朝の空を見つけた"）
+            content: 記憶の内容(例: "朝の空を見つけた")
             image_path: 画像ファイルパス
             camera_position: カメラの向き
             emotion: 感情
-            importance: 重要度（1-5）
+            importance: 重要度(1-5)
             category: カテゴリ
-            auto_describe: 画像説明を自動生成（Phase 4.3では未実装）
+            auto_describe: 画像説明を自動生成(Phase 4.3では未実装)
 
         Returns:
             保存された記憶
@@ -59,7 +59,7 @@ class SensoryIntegration:
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
-        # 記憶を保存（感覚データとカメラ位置を含む）
+        # 記憶を保存(感覚データとカメラ位置を含む)
         return await self._memory_store.save(
             content=content,
             emotion=emotion,
@@ -78,14 +78,14 @@ class SensoryIntegration:
         importance: int = 3,
         category: str = "observation",
     ) -> Memory:
-        """聴覚記憶を保存（音声パス + 文字起こし）.
+        """聴覚記憶を保存(音声パス + 文字起こし).
 
         Args:
-            content: 記憶の内容（例: "幼馴染の声を聞いた"）
+            content: 記憶の内容(例: "幼馴染の声を聞いた")
             audio_path: 音声ファイルパス
             transcript: Whisperなどでの文字起こし
             emotion: 感情
-            importance: 重要度（1-5）
+            importance: 重要度(1-5)
             category: カテゴリ
 
         Returns:
@@ -120,12 +120,12 @@ class SensoryIntegration:
         「この方向を見た時に何を見たっけ?」という問いに答える。
 
         Args:
-            pan_angle: パン角度（-90 to +90）
-            tilt_angle: チルト角度（-90 to +90）
-            tolerance: 角度の許容範囲（デフォルト±15度）
+            pan_angle: パン角度(-90 to +90)
+            tilt_angle: チルト角度(-90 to +90)
+            tolerance: 角度の許容範囲(デフォルト±15度)
 
         Returns:
-            条件を満たす記憶のリスト（新しい順）
+            条件を満たす記憶のリスト(新しい順)
         """
         # 全記憶を取得
         all_memories = await self._memory_store.get_all()
@@ -142,7 +142,7 @@ class SensoryIntegration:
             if pan_diff <= tolerance and tilt_diff <= tolerance:
                 results.append(memory)
 
-        # 時系列逆順（新しい順）
+        # 時系列逆順(新しい順)
         results.sort(key=lambda m: m.timestamp, reverse=True)
 
         return results
@@ -154,11 +154,11 @@ class SensoryIntegration:
         """感覚データを持つ記憶を取得.
 
         Args:
-            sensory_type: フィルタする感覚タイプ（"visual", "audio"など）
+            sensory_type: フィルタする感覚タイプ("visual", "audio"など)
                          Noneの場合は全ての感覚データ付き記憶を返す
 
         Returns:
-            感覚データを持つ記憶のリスト（新しい順）
+            感覚データを持つ記憶のリスト(新しい順)
         """
         all_memories = await self._memory_store.get_all()
 

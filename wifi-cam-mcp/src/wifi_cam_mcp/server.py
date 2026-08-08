@@ -14,7 +14,7 @@ from mcp.types import (
     Tool,
 )
 
-from .camera import TapoCamera
+from .camera import TapoCamera, _normalize_duration
 from .config import CameraConfig, ServerConfig
 
 logging.basicConfig(level=logging.INFO)
@@ -459,11 +459,16 @@ class CameraMCPServer:
 
                     case "camera_go_to_preset":
                         preset_id = arguments.get("preset_id", "")
+                        if not isinstance(preset_id, str) or not preset_id.strip():
+                            return [TextContent(type="text", text="Error: preset_id is required")]
                         result = await self._camera.go_to_preset(preset_id)
                         return [TextContent(type="text", text=result.message)]
 
                     case "listen":
-                        duration = min(arguments.get("duration", 5), 30)
+                        try:
+                            duration = _normalize_duration(arguments.get("duration", 5))
+                        except ValueError as exc:
+                            return [TextContent(type="text", text=f"Error: {exc}")]
                         transcribe = arguments.get("transcribe", True)
                         result = await self._camera.listen_audio(duration, transcribe)
 

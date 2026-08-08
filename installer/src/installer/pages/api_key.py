@@ -1,66 +1,39 @@
-"""API key configuration page"""
-from PyQt6.QtWidgets import (
-    QWizardPage,
-    QVBoxLayout,
-    QLabel,
-    QLineEdit,
-    QTextBrowser,
-    QFormLayout,
-)
-from PyQt6.QtCore import Qt
+"""Legacy authentication information page.
+
+The current wizard deliberately does not collect or write Anthropic API keys.
+"""
+
+from PyQt6.QtWidgets import QTextBrowser, QVBoxLayout, QWizardPage
 
 
 class ApiKeyPage(QWizardPage):
-    """Configure Claude API key"""
+    """Explain that Claude Code authentication is configured separately."""
 
     def __init__(self):
         super().__init__()
-        self.setTitle("Claude API Key")
-        self.setSubTitle("Enter your Anthropic API key")
+        self.setTitle("Claude Authentication")
+        self.setSubTitle("Configure Claude Code authentication separately")
 
-        layout = QVBoxLayout()
-
-        # Instructions
         instructions = QTextBrowser()
         instructions.setOpenExternalLinks(True)
-        instructions.setMaximumHeight(150)
         instructions.setHtml(
             """
             <p>
-                To use Claude Code with Embodied Claude, you need an Anthropic API key.
+                This installer configures MCP servers only. It does not collect or
+                store Anthropic API keys.
             </p>
-            <ul>
-                <li>Get your API key from:
-                <a href="https://console.anthropic.com/settings/keys">
-                Anthropic Console
-                </a></li>
-                <li>Or skip this if you already configured it in Claude Code</li>
-            </ul>
+            <p>
+                Configure Claude Code authentication using your normal Claude Code
+                setup before starting the installed servers.
+            </p>
+            <p>
+                <a href="https://docs.anthropic.com/en/docs/claude-code">
+                Claude Code documentation
+                </a>
+            </p>
             """
         )
+
+        layout = QVBoxLayout()
         layout.addWidget(instructions)
-
-        # API key input
-        form_layout = QFormLayout()
-
-        self.api_key_input = QLineEdit()
-        self.api_key_input.setPlaceholderText("sk-ant-api03-...")
-        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        form_layout.addRow("API Key:", self.api_key_input)
-
-        layout.addLayout(form_layout)
-
-        # Note
-        note = QLabel(
-            "💡 Your API key will be stored in Claude Code's configuration.\n"
-            "It will NOT be stored in the embodied-claude repository."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("QLabel { color: #666; margin-top: 10px; }")
-        layout.addWidget(note)
-
-        layout.addStretch()
         self.setLayout(layout)
-
-        # Register field (not required - user might skip)
-        self.registerField("api_key", self.api_key_input)

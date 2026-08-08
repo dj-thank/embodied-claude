@@ -3,15 +3,15 @@
     "wifi-cam": {
       "command": "uv",
       "args": [
+        "run",
         "--directory",
         "/path/to/wifi-cam-mcp",
-        "run",
         "wifi-cam-mcp"
       ],
       "env": {
-        "TAPO_CAMERA_HOST": "192.168.1.145",
-        "TAPO_USERNAME": "kmizushima",
-        "TAPO_PASSWORD": "K0t0n0ha1983"
+        "TAPO_CAMERA_HOST": "192.168.1.xxx",
+        "TAPO_USERNAME": "your-tapo-username",
+        "TAPO_PASSWORD": "your-tapo-password"
       }
     }
   }

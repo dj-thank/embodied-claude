@@ -1,5 +1,6 @@
 """MCP Server for USB webcam capture."""
 
+import asyncio
 import base64
 import io
 import os
@@ -12,15 +13,30 @@ os.environ["OPENCV_VIDEOIO_DEBUG"] = "0"
 import cv2
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import (
-    ImageContent,
-    TextContent,
-    Tool,
-)
+from mcp.types import ImageContent, TextContent, Tool
 from PIL import Image
 
-
 server = Server("usb-webcam-mcp")
+
+MAX_IMAGE_DIMENSION = 7680
+
+
+def _validate_capture_options(
+    camera_index: int,
+    width: int | None,
+    height: int | None,
+) -> None:
+    """Validate user-provided camera and image parameters."""
+    if isinstance(camera_index, bool) or not isinstance(camera_index, int) or camera_index < 0:
+        raise ValueError("camera_index must be a non-negative integer")
+
+    for name, value in (("width", width), ("height", height)):
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{name} must be an integer")
+        if not 1 <= value <= MAX_IMAGE_DIMENSION:
+            raise ValueError(f"{name} must be between 1 and {MAX_IMAGE_DIMENSION}")
 
 
 def find_available_cameras(max_cameras: int = 10) -> list[dict[str, Any]]:
@@ -28,14 +44,18 @@ def find_available_cameras(max_cameras: int = 10) -> list[dict[str, Any]]:
     cameras = []
     for i in range(max_cameras):
         cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            cameras.append({
-                "index": i,
-                "width": width,
-                "height": height,
-            })
+        try:
+            if cap.isOpened():
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                cameras.append(
+                    {
+                        "index": i,
+                        "width": width,
+                        "height": height,
+                    }
+                )
+        finally:
             cap.release()
     return cameras
 
@@ -46,12 +66,13 @@ def capture_from_camera(
     height: int | None = None,
 ) -> bytes:
     """Capture an image from the specified camera."""
+    _validate_capture_options(camera_index, width, height)
     cap = cv2.VideoCapture(camera_index)
 
-    if not cap.isOpened():
-        raise RuntimeError(f"Cannot open camera at index {camera_index}")
-
     try:
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open camera at index {camera_index}")
+
         if width is not None:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         if height is not None:
@@ -120,7 +141,7 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
     """Handle tool calls."""
     if name == "list_cameras":
-        cameras = find_available_cameras()
+        cameras = await asyncio.to_thread(find_available_cameras)
         if not cameras:
             return [TextContent(type="text", text="No cameras found")]
 
@@ -135,7 +156,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
         height = arguments.get("height")
 
         try:
-            image_bytes = capture_from_camera(camera_index, width, height)
+            image_bytes = await asyncio.to_thread(
+                capture_from_camera,
+                camera_index,
+                width,
+                height,
+            )
             image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
             return [
@@ -145,7 +171,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                     mimeType="image/jpeg",
                 )
             ]
-        except RuntimeError as e:
+        except (RuntimeError, ValueError) as e:
             return [TextContent(type="text", text=f"Error: {e}")]
 
     else:

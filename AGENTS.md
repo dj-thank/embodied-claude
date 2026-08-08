@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Overview
-This repository contains multiple Python MCP servers that give Claude “senses” (eyes, neck, ears, memory, and voice). Each server is a standalone package with its own `pyproject.toml` and can be run independently.
+This repository contains multiple Python MCP servers that give Claude "senses" (eyes, neck, ears, memory, and voice). Each server is a standalone package with its own `pyproject.toml` and can be run independently.
 
 ## Project Structure & Module Organization
 - `usb-webcam-mcp/`: USB webcam capture (`src/usb_webcam_mcp/`).
@@ -18,18 +18,18 @@ Run commands from the target subproject directory.
 
 - `uv sync`: Install dependencies.
 - `uv run <server-name>`: Start a server (e.g., `uv run wifi-cam-mcp`).
-- `uv run pytest`: Run tests (currently only in `memory-mcp/`).
-- `uv run ruff check .`: Lint where configured (`memory-mcp/`, `wifi-cam-mcp/`).
+- `uv run --extra dev pytest`: Run a subproject's tests.
+- `uv run --extra dev ruff check .`: Lint a subproject.
 
 ## Coding Style & Naming Conventions
-- Python 3.10+ baseline; `system-temperature-mcp/` requires Python 3.12+.
+- Python 3.10+ baseline; `system-temperature-mcp/` and `installer/` require Python 3.12+.
 - 4‑space indentation, `snake_case` modules, `test_*.py` tests.
 - Ruff line length is 100; asyncio is the default style for async work.
 
 ## Testing Guidelines
 - Frameworks: `pytest` + `pytest-asyncio`.
-- Tests live in `memory-mcp/tests/`.
-- Example: `cd memory-mcp && uv run pytest`.
+- Tests live in each package's `tests/` directory.
+- Example: `cd memory-mcp && uv run --extra dev pytest`.
 
 ## Configuration, Hardware, and WSL2 Notes
 - `.env` is not committed; pass camera credentials via environment variables.
@@ -52,4 +52,4 @@ Run commands from the target subproject directory.
 ## Session Memories (Auto‑Updated)
 - 2026-02-07: 記憶システムを「連想発散 + 予測符号化 + 手動統合」に拡張する実装に着手した。
 - 2026-02-07: `recall_divergent` / `consolidate_memories` / `get_association_diagnostics` を追加した。
-- 2026-02-07: `memory-mcp` の全テスト（104件）を通して回帰がないことを確認した。
+- 2026-02-07: `memory-mcp` の全テスト(104件)を通して回帰がないことを確認した。

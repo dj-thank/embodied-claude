@@ -2,17 +2,17 @@
 import shutil
 import subprocess
 import sys
+
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
-    QWizardPage,
-    QVBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
     QTextBrowser,
+    QVBoxLayout,
+    QWizardPage,
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon
 
 
 class DependenciesPage(QWizardPage):
@@ -21,9 +21,7 @@ class DependenciesPage(QWizardPage):
     def __init__(self):
         super().__init__()
         self.setTitle("Dependencies Check")
-        self.setSubTitle(
-            "Checking required software (ffmpeg, OpenCV, Whisper)"
-        )
+        self.setSubTitle("Checking required software (ffmpeg, Python 3.12+, uv)")
 
         layout = QVBoxLayout()
 
@@ -122,9 +120,11 @@ class DependenciesPage(QWizardPage):
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             if result.returncode == 0:
-                version = result.stdout.split("\n")[0].split(" ")[2]
+                version_parts = result.stdout.splitlines()[0].split()
+                version = version_parts[2] if len(version_parts) > 2 else "installed"
                 return True, version
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
@@ -133,7 +133,7 @@ class DependenciesPage(QWizardPage):
     def _check_python(self):
         """Check Python version"""
         version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        return True, version
+        return sys.version_info >= (3, 12), version
 
     def _check_opencv(self):
         """Check if OpenCV is installed"""
@@ -152,9 +152,11 @@ class DependenciesPage(QWizardPage):
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 if result.returncode == 0:
-                    version = result.stdout.strip().split(" ")[1]
+                    version_parts = result.stdout.strip().split()
+                    version = version_parts[-1] if version_parts else "installed"
                     return True, version
             except (subprocess.TimeoutExpired, IndexError):
                 pass

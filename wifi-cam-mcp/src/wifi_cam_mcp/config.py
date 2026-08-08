@@ -7,6 +7,35 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+MAX_CAPTURE_DIMENSION = 8192
+
+
+def _parse_int_env(
+    name: str,
+    value: str | None,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    """Parse and range-check an integer environment variable."""
+    raw_value = value or str(default)
+    try:
+        parsed = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+
+    if not minimum <= parsed <= maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return parsed
+
+
+def _parse_mount_mode(value: str | None, name: str) -> str:
+    """Parse the supported camera mounting modes."""
+    mount_mode = (value or "normal").strip().lower()
+    if mount_mode not in {"normal", "ceiling"}:
+        raise ValueError(f"{name} must be 'normal' or 'ceiling'")
+    return mount_mode
+
 
 @dataclass(frozen=True)
 class CameraConfig:
@@ -21,6 +50,23 @@ class CameraConfig:
     max_height: int = 1080
     mount_mode: str = "normal"  # "normal" (desktop) or "ceiling" (inverted)
 
+    def __post_init__(self) -> None:
+        """Reject invalid values even when a config is constructed directly."""
+        if not self.host.strip():
+            raise ValueError("Camera host is required")
+        if not self.username:
+            raise ValueError("Camera username is required")
+        if not self.password:
+            raise ValueError("Camera password is required")
+        if not 1 <= self.onvif_port <= 65535:
+            raise ValueError("ONVIF port must be between 1 and 65535")
+        if self.mount_mode not in {"normal", "ceiling"}:
+            raise ValueError("Mount mode must be 'normal' or 'ceiling'")
+        if not 1 <= self.max_width <= MAX_CAPTURE_DIMENSION:
+            raise ValueError(f"Capture width must be between 1 and {MAX_CAPTURE_DIMENSION}")
+        if not 1 <= self.max_height <= MAX_CAPTURE_DIMENSION:
+            raise ValueError(f"Capture height must be between 1 and {MAX_CAPTURE_DIMENSION}")
+
     @classmethod
     def from_env(cls, prefix: str = "TAPO") -> "CameraConfig":
         """Create config from environment variables.
@@ -32,17 +78,24 @@ class CameraConfig:
         host = os.getenv(f"{prefix}_CAMERA_HOST", "") or os.getenv("TAPO_CAMERA_HOST", "")
         username = os.getenv(f"{prefix}_USERNAME", "") or os.getenv("TAPO_USERNAME", "")
         password = os.getenv(f"{prefix}_PASSWORD", "") or os.getenv("TAPO_PASSWORD", "")
-        onvif_port = int(
-            os.getenv(f"{prefix}_ONVIF_PORT", "") or os.getenv("TAPO_ONVIF_PORT", "") or "2020"
+        onvif_port = _parse_int_env(
+            f"{prefix}_ONVIF_PORT",
+            os.getenv(f"{prefix}_ONVIF_PORT") or os.getenv("TAPO_ONVIF_PORT"),
+            2020,
+            1,
+            65535,
         )
         stream_url = os.getenv(f"{prefix}_STREAM_URL") or os.getenv("TAPO_STREAM_URL")
-        mount_mode = (
-            os.getenv(f"{prefix}_MOUNT_MODE", "") or os.getenv("TAPO_MOUNT_MODE", "") or "normal"
-        ).lower()
-        if mount_mode not in ("normal", "ceiling"):
-            raise ValueError(f"Invalid mount mode '{mount_mode}'. Must be 'normal' or 'ceiling'.")
-        max_width = int(os.getenv("CAPTURE_MAX_WIDTH", "1920"))
-        max_height = int(os.getenv("CAPTURE_MAX_HEIGHT", "1080"))
+        mount_mode = _parse_mount_mode(
+            os.getenv(f"{prefix}_MOUNT_MODE") or os.getenv("TAPO_MOUNT_MODE"),
+            f"{prefix}_MOUNT_MODE",
+        )
+        max_width = _parse_int_env(
+            "CAPTURE_MAX_WIDTH", os.getenv("CAPTURE_MAX_WIDTH"), 1920, 1, MAX_CAPTURE_DIMENSION
+        )
+        max_height = _parse_int_env(
+            "CAPTURE_MAX_HEIGHT", os.getenv("CAPTURE_MAX_HEIGHT"), 1080, 1, MAX_CAPTURE_DIMENSION
+        )
 
         if not host:
             raise ValueError(f"{prefix}_CAMERA_HOST environment variable is required")
@@ -76,15 +129,24 @@ class CameraConfig:
         # Right camera can share username/password with left, or have its own
         username = os.getenv("TAPO_RIGHT_USERNAME", "") or os.getenv("TAPO_USERNAME", "")
         password = os.getenv("TAPO_RIGHT_PASSWORD", "") or os.getenv("TAPO_PASSWORD", "")
-        onvif_port = int(
-            os.getenv("TAPO_RIGHT_ONVIF_PORT", "") or os.getenv("TAPO_ONVIF_PORT", "") or "2020"
+        onvif_port = _parse_int_env(
+            "TAPO_RIGHT_ONVIF_PORT",
+            os.getenv("TAPO_RIGHT_ONVIF_PORT") or os.getenv("TAPO_ONVIF_PORT"),
+            2020,
+            1,
+            65535,
         )
         stream_url = os.getenv("TAPO_RIGHT_STREAM_URL")
-        mount_mode = (
-            os.getenv("TAPO_RIGHT_MOUNT_MODE", "") or os.getenv("TAPO_MOUNT_MODE", "") or "normal"
-        ).lower()
-        max_width = int(os.getenv("CAPTURE_MAX_WIDTH", "1920"))
-        max_height = int(os.getenv("CAPTURE_MAX_HEIGHT", "1080"))
+        mount_mode = _parse_mount_mode(
+            os.getenv("TAPO_RIGHT_MOUNT_MODE") or os.getenv("TAPO_MOUNT_MODE"),
+            "TAPO_RIGHT_MOUNT_MODE",
+        )
+        max_width = _parse_int_env(
+            "CAPTURE_MAX_WIDTH", os.getenv("CAPTURE_MAX_WIDTH"), 1920, 1, MAX_CAPTURE_DIMENSION
+        )
+        max_height = _parse_int_env(
+            "CAPTURE_MAX_HEIGHT", os.getenv("CAPTURE_MAX_HEIGHT"), 1080, 1, MAX_CAPTURE_DIMENSION
+        )
 
         if not username or not password:
             return None

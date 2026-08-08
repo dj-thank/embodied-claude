@@ -4,7 +4,7 @@
 # interoception.sh (UserPromptSubmitフック) がこのファイルを読んでコンテキストに注入する
 
 STATE_FILE="/tmp/interoception_state.json"
-WINDOW_SIZE=12  # 直近12エントリ（5秒×12=1分間）
+WINDOW_SIZE=12  # 直近12エントリ(5秒×12=1分間)
 
 # --- 時刻 ---
 CURRENT_TIME=$(date '+%Y-%m-%dT%H:%M:%S%z')
@@ -26,7 +26,7 @@ else
     PHASE="late_night"
 fi
 
-# --- CPU負荷（覚醒度） ---
+# --- CPU負荷(覚醒度) ---
 LOAD_AVG=$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')
 if [ -z "$LOAD_AVG" ]; then
     LOAD_AVG=$(uptime | awk -F'load averages?: ' '{print $2}' | awk '{print $1}' | tr -d ',')
@@ -43,7 +43,7 @@ fi
 # --- 体温 ---
 THERMAL=$(sysctl -n machdep.xcpm.cpu_thermal_level 2>/dev/null || echo "0")
 
-# --- 稼働時間（分） ---
+# --- 稼働時間(分) ---
 BOOT_TIME=$(sysctl -n kern.boottime 2>/dev/null | awk '{print $4}' | tr -d ',')
 if [ -n "$BOOT_TIME" ]; then
     NOW_EPOCH=$(date +%s)
@@ -55,7 +55,7 @@ fi
 # --- ring buffer 管理 ---
 # 既存のstate fileからwindowを読み出し、新エントリを追加、古いのを削除
 if [ -f "$STATE_FILE" ]; then
-    # 既存windowを取得（最大WINDOW_SIZE-1エントリ保持）
+    # 既存windowを取得(最大WINDOW_SIZE-1エントリ保持)
     EXISTING_WINDOW=$(python3 -c "
 import json, sys
 try:

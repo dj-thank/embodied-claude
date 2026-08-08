@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from memory_mcp.config import MemoryConfig
 from memory_mcp.memory import (
     MemoryStore,
     calculate_emotion_boost,
@@ -11,6 +12,27 @@ from memory_mcp.memory import (
     calculate_importance_boost,
     calculate_time_decay,
 )
+
+
+class TestMemoryConnection:
+    """Tests for supported storage modes."""
+
+    @pytest.mark.asyncio
+    async def test_in_memory_storage_uses_a_valid_chroma_client(self):
+        """The documented in-memory sentinel must work on Windows too."""
+        store = MemoryStore(
+            MemoryConfig(
+                db_path=":memory:",
+                collection_name="test_memories",
+            )
+        )
+
+        await store.connect()
+        try:
+            memory = await store.save(content="In-memory storage works")
+            assert memory.content == "In-memory storage works"
+        finally:
+            await store.disconnect()
 
 
 class TestMemorySave:

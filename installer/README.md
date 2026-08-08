@@ -10,12 +10,13 @@ GUI installer for Embodied Claude MCP servers.
 - ✅ Automatic MCP configuration (~/.claude.json)
 - ✅ Automatic dependency installation (uv sync)
 - ✅ Backup existing configuration
+- ✅ Does not collect or store Claude authentication keys
 
 ## Development
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.12+
 - uv (Python package manager)
 
 ### Setup
@@ -96,7 +97,7 @@ installer/
 │       ├── welcome.py       # Welcome page
 │       ├── dependencies.py  # Dependency check
 │       ├── camera.py        # Camera selection
-│       ├── api_key.py       # API key input
+│       ├── api_key.py       # Legacy page (not included in the wizard)
 │       ├── install.py       # Installation process
 │       └── complete.py      # Completion page
 ├── embodied-claude-installer.spec  # PyInstaller config

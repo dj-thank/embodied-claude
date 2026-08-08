@@ -37,7 +37,7 @@ class Category(str, Enum):
 class LinkType(str, Enum):
     """リンクタイプ."""
 
-    SIMILAR = "similar"  # 類似（従来の自動リンク）
+    SIMILAR = "similar"  # 類似(従来の自動リンク)
     CAUSED_BY = "caused_by"  # この記憶の原因
     LEADS_TO = "leads_to"  # この記憶から派生
     RELATED = "related"  # 一般的な関連
@@ -50,7 +50,7 @@ class MemoryLink:
     target_id: str
     link_type: str  # LinkType.value
     created_at: str  # ISO 8601
-    note: str | None = None  # リンクの説明（任意）
+    note: str | None = None  # リンクの説明(任意)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -77,7 +77,7 @@ class MemoryLink:
 
 @dataclass(frozen=True)
 class CameraPosition:
-    """カメラの向き（パン・チルト角度）."""
+    """カメラの向き(パン・チルト角度)."""
 
     pan_angle: int  # -90 to +90
     tilt_angle: int  # -90 to +90
@@ -103,7 +103,7 @@ class CameraPosition:
 
 @dataclass(frozen=True)
 class SensoryData:
-    """感覚データへの参照（画像パス、音声パスなど）."""
+    """感覚データへの参照(画像パス、音声パスなど)."""
 
     sensory_type: str  # "visual", "audio", "movement"
     file_path: str | None
@@ -135,7 +135,7 @@ class SensoryData:
 
 @dataclass(frozen=True)
 class Episode:
-    """エピソード記憶（一連の体験）."""
+    """エピソード記憶(一連の体験)."""
 
     id: str
     title: str  # "朝の空を探した体験"
@@ -199,7 +199,7 @@ class Memory:
     category: str
     # Phase 2: アクセス追跡
     access_count: int = 0  # 想起回数
-    last_accessed: str = ""  # 最終アクセス時刻（ISO 8601）
+    last_accessed: str = ""  # 最終アクセス時刻(ISO 8601)
     # Phase 3: 連想リンク
     linked_ids: tuple[str, ...] = ()  # リンク先の記憶ID群
     # Phase 4: エピソード記憶・感覚データ統合
@@ -252,7 +252,7 @@ class MemorySearchResult:
     """検索結果."""
 
     memory: Memory
-    distance: float  # 類似度（小さいほど近い）
+    distance: float  # 類似度(小さいほど近い)
 
 
 @dataclass(frozen=True)
@@ -264,7 +264,7 @@ class ScoredMemory:
     time_decay_factor: float  # 時間減衰係数 (0.0-1.0)
     emotion_boost: float  # 感情ブースト
     importance_boost: float  # 重要度ブースト
-    final_score: float  # 最終スコア（低いほど良い）
+    final_score: float  # 最終スコア(低いほど良い)
 
 
 @dataclass(frozen=True)

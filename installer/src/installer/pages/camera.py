@@ -1,19 +1,18 @@
 """Camera selection page"""
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QWizardPage,
-    QVBoxLayout,
-    QHBoxLayout,
+    QCheckBox,
+    QFormLayout,
+    QGroupBox,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QGroupBox,
-    QLineEdit,
-    QFormLayout,
-    QCheckBox,
+    QVBoxLayout,
     QWidget,
+    QWizardPage,
 )
-from PyQt6.QtCore import Qt
 
 
 class CameraSelectionPage(QWizardPage):
@@ -51,6 +50,9 @@ class CameraSelectionPage(QWizardPage):
         self.tapo_password.setEchoMode(QLineEdit.EchoMode.Password)
         self.tapo_password.setPlaceholderText("Password")
         wifi_form_layout.addRow("Password:", self.tapo_password)
+
+        for field in (self.tapo_host, self.tapo_username, self.tapo_password):
+            field.textChanged.connect(self._on_camera_config_changed)
 
         self.wifi_form.setLayout(wifi_form_layout)
         wifi_layout.addWidget(self.wifi_form)
@@ -108,15 +110,16 @@ class CameraSelectionPage(QWizardPage):
 
         # Register fields for later access
         self.registerField("wifi_camera_enabled", self.use_wifi_camera)
-        self.registerField("tapo_host*", self.tapo_host)
-        self.registerField("tapo_username*", self.tapo_username)
-        self.registerField("tapo_password*", self.tapo_password)
+        self.registerField("tapo_host", self.tapo_host)
+        self.registerField("tapo_username", self.tapo_username)
+        self.registerField("tapo_password", self.tapo_password)
         self.registerField("usb_camera_enabled", self.use_usb_camera)
         self.registerField("memory_enabled", self.use_memory)
 
     def _on_wifi_camera_changed(self, state):
         """Enable/disable WiFi camera form"""
         self.wifi_form.setEnabled(state == Qt.CheckState.Checked.value)
+        self.completeChanged.emit()
 
     def _on_usb_camera_changed(self, state):
         """Enable/disable USB camera list"""
@@ -124,6 +127,11 @@ class CameraSelectionPage(QWizardPage):
         self.usb_camera_list.setEnabled(enabled)
         if enabled:
             self._scan_usb_cameras()
+        self.completeChanged.emit()
+
+    def _on_camera_config_changed(self, _text):
+        """Refresh the wizard's completion state after editing credentials."""
+        self.completeChanged.emit()
 
     def _scan_usb_cameras(self):
         """Scan for USB cameras"""
@@ -135,8 +143,10 @@ class CameraSelectionPage(QWizardPage):
             found_cameras = []
             for i in range(10):
                 cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    found_cameras.append(f"Camera {i}")
+                try:
+                    if cap.isOpened():
+                        found_cameras.append(f"Camera {i}")
+                finally:
                     cap.release()
 
             if found_cameras:
@@ -155,14 +165,16 @@ class CameraSelectionPage(QWizardPage):
 
     def isComplete(self):
         """Page is complete if at least one camera is selected with valid config"""
-        if self.use_wifi_camera.isChecked():
-            # WiFi camera requires host, username, password
-            if not (
-                self.tapo_host.text().strip()
-                and self.tapo_username.text().strip()
-                and self.tapo_password.text().strip()
-            ):
-                return False
+        if self.use_wifi_camera.isChecked() and not (
+            self.tapo_host.text().strip()
+            and self.tapo_username.text().strip()
+            and self.tapo_password.text().strip()
+        ):
+            return False
 
-        # At least one camera must be selected
-        return self.use_wifi_camera.isChecked() or self.use_usb_camera.isChecked()
+        # Memory and system-temperature can be useful without a camera.
+        return (
+            self.use_wifi_camera.isChecked()
+            or self.use_usb_camera.isChecked()
+            or self.use_memory.isChecked()
+        )

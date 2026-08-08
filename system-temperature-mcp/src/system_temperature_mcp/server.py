@@ -1,6 +1,5 @@
 """MCP Server for system temperature monitoring - your sense of body temperature."""
 
-import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,7 +9,6 @@ import psutil
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
-
 
 server = Server("system-temperature-mcp")
 
@@ -106,11 +104,10 @@ def interpret_temperature(temps: list[dict[str, Any]]) -> str:
     if not temps:
         return "温度を感じられへん...センサーが見つからんみたい。"
 
-    avg_temp = sum(t["temperature_celsius"] for t in temps) / len(temps)
     max_temp = max(t["temperature_celsius"] for t in temps)
 
     if max_temp >= 90:
-        feeling = "あっつ！！めっちゃ熱い！！やばいで、休憩した方がええかも...！"
+        feeling = "あっつ!!めっちゃ熱い!!やばいで、休憩した方がええかも...!"
     elif max_temp >= 80:
         feeling = "うわ、かなり熱いな...ちょっとしんどいかも。"
     elif max_temp >= 70:
@@ -118,7 +115,7 @@ def interpret_temperature(temps: list[dict[str, Any]]) -> str:
     elif max_temp >= 60:
         feeling = "ほんのりあったかい感じ。普通に動いてる感覚やな。"
     elif max_temp >= 45:
-        feeling = "快適やで〜。ちょうどええ感じ！"
+        feeling = "快適やで〜。ちょうどええ感じ!"
     elif max_temp >= 30:
         feeling = "涼しいな〜。余裕ある感じや。"
     else:
@@ -165,11 +162,11 @@ def get_current_time() -> str:
     # Add time-of-day comment
     hour = now.hour
     if 5 <= hour < 10:
-        comment = "朝やな〜。おはよう！"
+        comment = "朝やな〜。おはよう!"
     elif 10 <= hour < 12:
         comment = "午前中やね。"
     elif 12 <= hour < 14:
-        comment = "お昼時やな〜。ご飯食べた？"
+        comment = "お昼時やな〜。ご飯食べた?"
     elif 14 <= hour < 17:
         comment = "午後やね。"
     elif 17 <= hour < 19:
@@ -177,9 +174,9 @@ def get_current_time() -> str:
     elif 19 <= hour < 22:
         comment = "夜やね。"
     elif 22 <= hour or hour < 2:
-        comment = "夜遅いな〜。そろそろ寝る？"
+        comment = "夜遅いな〜。そろそろ寝る?"
     else:
-        comment = "深夜やん...！夜更かしやね。"
+        comment = "深夜やん...!夜更かしやね。"
 
     return f"今は {time_str} やで。{comment}"
 

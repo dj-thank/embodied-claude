@@ -1,32 +1,32 @@
 # Embodied Claude - プロジェクト指示
 
-このプロジェクトは、Claude に身体（目・首・耳・声・脳）を与える MCP サーバー群です。
+このプロジェクトは、Claude に身体(目・首・耳・声・脳)を与える MCP サーバー群です。
 
 ## ディレクトリ構造
 
 ```
 embodied-claude/
-├── usb-webcam-mcp/        # USB ウェブカメラ制御（Python）
+├── usb-webcam-mcp/        # USB ウェブカメラ制御(Python)
 │   └── src/usb_webcam_mcp/
 │       └── server.py      # MCP サーバー実装
 │
-├── wifi_cam_mcp/          # Wi-Fi PTZ カメラ制御（Python）
+├── wifi-cam-mcp/          # Wi-Fi PTZ カメラ制御(Python)
 │   ├── server.py          # MCP サーバー実装
 │   ├── camera.py          # Tapo カメラ制御
 │   └── config.py          # 設定管理
 │
-├── elevenlabs-t2s-mcp/     # ElevenLabs TTS（Python）
+├── elevenlabs-t2s-mcp/     # ElevenLabs TTS(Python)
 │   └── src/elevenlabs_t2s_mcp/
 │       └── server.py       # MCP サーバー実装
 │
-├── memory-mcp/            # 長期記憶システム（Python）
+├── memory-mcp/            # 長期記憶システム(Python)
 │   └── src/memory_mcp/
 │       ├── server.py      # MCP サーバー実装
 │       ├── memory.py      # ChromaDB 操作
-│       ├── types.py       # 型定義（Emotion, Category）
+│       ├── types.py       # 型定義(Emotion, Category)
 │       └── config.py      # 設定管理
 │
-├── system-temperature-mcp/ # 体温感覚（Python）
+├── system-temperature-mcp/ # 体温感覚(Python)
 │   └── src/system_temperature_mcp/
 │       └── server.py      # 温度センサー読み取り
 │
@@ -45,39 +45,39 @@ embodied-claude/
 - **非同期**: asyncio ベース
 
 ```bash
-# 依存関係インストール（dev含む）
+# 依存関係インストール(dev含む)
 uv sync --extra dev
 
 # リント
-uv run ruff check .
+uv run --extra dev ruff check .
 
 # テスト実行
-uv run pytest
+uv run --extra dev pytest
 
 # サーバー起動
 uv run <server-name>
 ```
 
-### コミット前のチェック（必須）
+### コミット前のチェック(必須)
 
 各サブプロジェクトで以下を実行してからコミットすること:
 
 ```bash
 cd <project-dir>
-uv run ruff check .    # lint エラーがないこと
-uv run pytest -v       # テストが通ること
+uv run --extra dev ruff check .    # lint エラーがないこと
+uv run --extra dev pytest -v       # テストが通ること
 ```
 
 ## MCP ツール一覧
 
-### usb-webcam-mcp（目）
+### usb-webcam-mcp(目)
 
 | ツール | パラメータ | 説明 |
 |--------|-----------|------|
 | `list_cameras` | なし | 接続カメラ一覧 |
 | `see` | camera_index?, width?, height? | 画像キャプチャ |
 
-### wifi_cam_mcp（目・首・耳）
+### wifi-cam-mcp(目・首・耳)
 
 | ツール | パラメータ | 説明 |
 |--------|-----------|------|
@@ -92,7 +92,7 @@ uv run pytest -v       # テストが通ること
 | `camera_go_to_preset` | preset_id | プリセット移動 |
 | `listen` | duration (1-30秒), transcribe? | 音声録音 |
 
-#### wifi_cam_mcp（ステレオ視覚/右目がある場合）
+#### wifi-cam-mcp(ステレオ視覚/右目がある場合)
 
 | ツール | パラメータ | 説明 |
 |--------|-----------|------|
@@ -110,7 +110,7 @@ uv run pytest -v       # テストが通ること
 | `align_eyes` | なし | 右目を左目に合わせる |
 | `reset_eye_positions` | なし | 角度追跡をリセット |
 
-### memory-mcp（脳）
+### memory-mcp(脳)
 
 | ツール | パラメータ | 説明 |
 |--------|-----------|------|
@@ -138,13 +138,13 @@ uv run pytest -v       # テストが通ること
 **Emotion**: happy, sad, surprised, moved, excited, nostalgic, curious, neutral
 **Category**: daily, philosophical, technical, memory, observation, feeling, conversation
 
-### elevenlabs-t2s（声）
+### elevenlabs-t2s(声)
 
 | ツール | パラメータ | 説明 |
 |--------|-----------|------|
 | `say` | text, voice_id?, model_id?, output_format?, play_audio? | ElevenLabsで音声合成して発話 |
 
-### system-temperature-mcp（体温感覚）
+### system-temperature-mcp(体温感覚)
 
 | ツール | パラメータ | 説明 |
 |--------|-----------|------|
@@ -157,17 +157,17 @@ uv run pytest -v       # テストが通ること
 
 1. **USB カメラ**: `usbipd` でカメラを WSL に転送する必要がある
 2. **温度センサー**: WSL2 では `/sys/class/thermal/` にアクセスできない
-3. **GPU**: CUDA は WSL2 でも利用可能（Whisper用）
+3. **GPU**: CUDA は WSL2 でも利用可能(Whisper用)
 
 ### Tapo カメラ設定
 
-1. Tapo アプリでローカルアカウントを作成（TP-Link アカウントではない）
+1. Tapo アプリでローカルアカウントを作成(TP-Link アカウントではない)
 2. カメラの IP アドレスを固定推奨
-3. カメラ制御は ONVIF プロトコル（業界標準）を使用
+3. カメラ制御は ONVIF プロトコル(業界標準)を使用
 
 ### セキュリティ
 
-- `.env` ファイルはコミットしない（.gitignore に追加済み）
+- `.env` ファイルはコミットしない(.gitignore に追加済み)
 - カメラパスワードは環境変数で管理
 - ElevenLabs API キーは環境変数で管理
 - 長期記憶は `~/.claude/memories/` に保存される
@@ -180,7 +180,7 @@ uv run pytest -v       # テストが通ること
 # USB カメラ
 v4l2-ctl --list-devices
 
-squash Wi-Fi カメラ（RTSP ストリーム確認）
+squash Wi-Fi カメラ(RTSP ストリーム確認)
 ffplay rtsp://username:password@192.168.1.xxx:554/stream1
 ```
 
@@ -188,7 +188,7 @@ ffplay rtsp://username:password@192.168.1.xxx:554/stream1
 
 ```bash
 # 直接起動してログ確認
-cd wifi_cam_mcp && uv run wifi-cam-mcp
+cd wifi-cam-mcp && uv run wifi-cam-mcp
 ```
 
 ## 外出時の構成
@@ -207,9 +207,9 @@ cd wifi_cam_mcp && uv run wifi-cam-mcp
                             [スマホブラウザ] ◀── 操作
 ```
 
-- 電源: 大容量モバイルバッテリー（40,000mAh推奨）+ USB-C PD→DC 9V変換ケーブル
+- 電源: 大容量モバイルバッテリー(40,000mAh推奨)+ USB-C PD→DC 9V変換ケーブル
 - ネットワーク: スマホテザリング + Tailscale VPN
-- 操作: claude-code-webui（スマホブラウザから）
+- 操作: claude-code-webui(スマホブラウザから)
 
 ## 関連リンク
 

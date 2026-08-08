@@ -13,23 +13,23 @@ if TYPE_CHECKING:
 
 
 class WorkingMemoryBuffer:
-    """作業記憶（短期記憶）バッファ - インメモリのみ.
+    """作業記憶(短期記憶)バッファ - インメモリのみ.
 
     人間の短期記憶と同様に、最近の記憶を高速にアクセスできるバッファ。
-    セッション終了で自然に忘れる（永続化しない）。
+    セッション終了で自然に忘れる(永続化しない)。
     """
 
     def __init__(self, capacity: int = 20):
         """Initialize working memory buffer.
 
         Args:
-            capacity: バッファの最大容量（デフォルト20）
+            capacity: バッファの最大容量(デフォルト20)
         """
         self._buffer: deque[Memory] = deque(maxlen=capacity)
         self._lock = asyncio.Lock()
 
     async def add(self, memory: Memory) -> None:
-        """記憶を追加（古いものは自動削除）.
+        """記憶を追加(古いものは自動削除).
 
         Args:
             memory: 追加する記憶
@@ -44,7 +44,7 @@ class WorkingMemoryBuffer:
             n: 取得する記憶の数
 
         Returns:
-            最新のn件の記憶（新しい順）
+            最新のn件の記憶(新しい順)
         """
         async with self._lock:
             return list(islice(reversed(self._buffer), n))
@@ -53,7 +53,7 @@ class WorkingMemoryBuffer:
         """バッファ内の全記憶を取得.
 
         Returns:
-            全記憶（新しい順）
+            全記憶(新しい順)
         """
         async with self._lock:
             return list(reversed(self._buffer))
@@ -69,7 +69,7 @@ class WorkingMemoryBuffer:
     ) -> None:
         """重要な記憶を長期記憶から再ロード.
 
-        以下の条件を満たす記憶を再ロード：
+        以下の条件を満たす記憶を再ロード:
         - importance >= 4
         - access_count >= 5
         - last_accessed が直近1週間以内
@@ -83,7 +83,7 @@ class WorkingMemoryBuffer:
         ).isoformat()
 
         # 重要度の高い記憶を検索
-        # （memory_storeのメソッドを使う - 実装はmemory.pyで）
+        # (memory_storeのメソッドを使う - 実装はmemory.pyで)
         important_memories = await memory_store.search_important_memories(
             min_importance=4,
             min_access_count=5,
@@ -91,7 +91,7 @@ class WorkingMemoryBuffer:
             n_results=10,
         )
 
-        # バッファに追加（重複排除）
+        # バッファに追加(重複排除)
         async with self._lock:
             existing_ids = {m.id for m in self._buffer}
             for memory in important_memories:

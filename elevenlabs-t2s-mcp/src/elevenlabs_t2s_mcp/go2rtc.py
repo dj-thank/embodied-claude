@@ -3,12 +3,14 @@
 import asyncio
 import json
 import logging
+import os
 import platform
 import stat
 import subprocess
 import urllib.request
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -131,11 +133,13 @@ def generate_config(
     """Generate go2rtc.yaml config file."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
     resolved_ffmpeg = ffmpeg_bin or "ffmpeg"
+    encoded_username = quote(username, safe="")
+    encoded_password = quote(password, safe="")
     content = (
         f"streams:\n"
         f"  {stream_name}:\n"
-        f"    - rtsp://{username}:{password}@{camera_host}:554/stream1\n"
-        f"    - tapo://{password}@{camera_host}\n"
+        f"    - rtsp://{encoded_username}:{encoded_password}@{camera_host}:554/stream1\n"
+        f"    - tapo://{encoded_password}@{camera_host}\n"
         f"\n"
         f"ffmpeg:\n"
         f"  bin: {resolved_ffmpeg}\n"
@@ -146,7 +150,9 @@ def generate_config(
         f"log:\n"
         f"  level: info\n"
     )
-    config_path.write_text(content)
+    config_path.write_text(content, encoding="utf-8")
+    if os.name != "nt":
+        config_path.chmod(0o600)
     logger.info("go2rtc config written to %s", config_path)
     return config_path
 
