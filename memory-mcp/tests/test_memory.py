@@ -252,6 +252,58 @@ class TestAccessTracking:
     """Tests for access count tracking."""
 
     @pytest.mark.asyncio
+    async def test_search_updates_access_tracking(self, memory_store: MemoryStore):
+        """Memories returned by user-facing search should record an access."""
+        memories = [
+            await memory_store.save(content="カメラの検索対象記憶"),
+            await memory_store.save(content="パン・チルトの検索対象記憶"),
+        ]
+
+        results = await memory_store.search(query="カメラの記憶", n_results=2)
+
+        assert {result.memory.id for result in results} == {
+            memory.id for memory in memories
+        }
+        for memory in memories:
+            updated = await memory_store.get_by_id(memory.id)
+            assert updated is not None
+            assert updated.access_count == 1
+            assert updated.last_accessed != ""
+
+    @pytest.mark.asyncio
+    async def test_recall_updates_access_tracking(self, memory_store: MemoryStore):
+        """Memories selected by smart recall should record an access."""
+        memory = await memory_store.save(content="パン・チルト機能の想起対象")
+
+        results = await memory_store.recall(
+            context="カメラのパン・チルトについて",
+            n_results=1,
+        )
+
+        assert [result.memory.id for result in results] == [memory.id]
+        updated = await memory_store.get_by_id(memory.id)
+        assert updated is not None
+        assert updated.access_count == 1
+        assert updated.last_accessed != ""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_updates_do_not_lose_access_count(
+        self, memory_store: MemoryStore
+    ):
+        """Concurrent recalls of one memory must each increment its count."""
+        import asyncio
+
+        memory = await memory_store.save(content="並行アクセス対象")
+
+        await asyncio.gather(
+            *(memory_store.update_access(memory.id) for _ in range(8))
+        )
+
+        updated = await memory_store.get_by_id(memory.id)
+        assert updated is not None
+        assert updated.access_count == 8
+
+    @pytest.mark.asyncio
     async def test_update_access(self, memory_store: MemoryStore):
         """Test access count is incremented."""
         memory = await memory_store.save(content="Test memory")
@@ -284,6 +336,26 @@ class TestAccessTracking:
 
 class TestAutoLinking:
     """Tests for automatic memory linking."""
+
+    @pytest.mark.asyncio
+    async def test_save_with_auto_link_adds_memory_to_working_buffer(
+        self, memory_store: MemoryStore
+    ):
+        """Auto-linked saves should be immediately available in working memory."""
+        existing = await memory_store.save(content="既存のカメラ記憶")
+        working_memory = memory_store.get_working_memory()
+        await working_memory.clear()
+
+        saved = await memory_store.save_with_auto_link(
+            content="カメラの新しい記憶",
+            link_threshold=2.0,
+        )
+
+        recent = await working_memory.get_recent(n=5)
+        assert [memory.id for memory in recent] == [saved.id]
+        existing_after_link_search = await memory_store.get_by_id(existing.id)
+        assert existing_after_link_search is not None
+        assert existing_after_link_search.access_count == 0
 
     @pytest.mark.asyncio
     async def test_save_with_auto_link(self, memory_store: MemoryStore):

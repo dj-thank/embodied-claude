@@ -275,6 +275,7 @@ class MemoryStore:
         self._collection: chromadb.Collection | None = None  # claude_memories
         self._episodes_collection: chromadb.Collection | None = None  # Phase 4
         self._lock = asyncio.Lock()
+        self._access_lock = asyncio.Lock()
         # Phase 4: 作業記憶バッファ
         self._working_memory = WorkingMemoryBuffer(capacity=20)
         # Phase 6: 連想・統合エンジン
@@ -371,8 +372,19 @@ class MemoryStore:
         category_filter: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        track_access: bool = True,
     ) -> list[MemorySearchResult]:
-        """Search memories by semantic similarity."""
+        """Search memories by semantic similarity.
+
+        Args:
+            query: Semantic search query.
+            n_results: Maximum number of results.
+            emotion_filter: Optional emotion metadata filter.
+            category_filter: Optional category metadata filter.
+            date_from: Optional inclusive lower timestamp bound.
+            date_to: Optional inclusive upper timestamp bound.
+            track_access: Record returned memories as user-visible accesses.
+        """
         collection = self._ensure_connected()
 
         # Build where filter
@@ -415,6 +427,11 @@ class MemoryStore:
                 distance = distances[i] if i < len(distances) else 0.0
                 search_results.append(MemorySearchResult(memory=memory, distance=distance))
 
+        if track_access:
+            await self._record_accesses(
+                [result.memory.id for result in search_results]
+            )
+
         return search_results
 
     async def recall(
@@ -434,10 +451,12 @@ class MemoryStore:
             use_emotion_boost=True,
         )
         # ScoredMemory -> MemorySearchResult に変換
-        return [
+        results = [
             MemorySearchResult(memory=sr.memory, distance=sr.final_score)
             for sr in scored_results
         ]
+        await self._record_accesses([result.memory.id for result in results])
+        return results
 
     async def list_recent(
         self,
@@ -615,6 +634,42 @@ class MemoryStore:
         scored_results.sort(key=lambda x: x.final_score)
         return scored_results[:n_results]
 
+    async def _record_accesses(self, memory_ids: list[str]) -> None:
+        """Record one access for each distinct memory ID."""
+        unique_ids = list(dict.fromkeys(memory_ids))
+        if not unique_ids:
+            return
+
+        async with self._access_lock:
+            collection = self._ensure_connected()
+            results = await asyncio.to_thread(collection.get, ids=unique_ids)
+            result_ids = results.get("ids", []) if results else []
+            metadatas = results.get("metadatas", []) if results else []
+            timestamp = datetime.now().isoformat()
+            update_ids: list[str] = []
+            update_metadatas: list[dict[str, Any]] = []
+
+            for index, memory_id in enumerate(result_ids):
+                metadata = metadatas[index] if index < len(metadatas) else None
+                if metadata is None:
+                    continue
+                update_ids.append(memory_id)
+                update_metadatas.append(
+                    {
+                        **metadata,
+                        "access_count": _safe_int(metadata.get("access_count", 0), 0)
+                        + 1,
+                        "last_accessed": timestamp,
+                    }
+                )
+
+            if update_ids:
+                await asyncio.to_thread(
+                    collection.update,
+                    ids=update_ids,
+                    metadatas=update_metadatas,
+                )
+
     async def update_access(self, memory_id: str) -> None:
         """
         アクセス情報を更新(access_count++, last_accessed更新)。
@@ -622,36 +677,7 @@ class MemoryStore:
         Args:
             memory_id: 更新する記憶のID
         """
-        collection = self._ensure_connected()
-
-        # 現在のメタデータを取得
-        results = await asyncio.to_thread(
-            collection.get,
-            ids=[memory_id],
-        )
-
-        if not results or not results.get("ids"):
-            return  # 記憶が見つからない
-
-        metadatas = results.get("metadatas", [])
-        if not metadatas:
-            return
-
-        current_metadata = metadatas[0]
-        current_access_count = current_metadata.get("access_count", 0)
-
-        # 更新
-        new_metadata = {
-            **current_metadata,
-            "access_count": current_access_count + 1,
-            "last_accessed": datetime.now().isoformat(),
-        }
-
-        await asyncio.to_thread(
-            collection.update,
-            ids=[memory_id],
-            metadatas=[new_metadata],
-        )
+        await self._record_accesses([memory_id])
 
     async def get_by_id(self, memory_id: str) -> Memory | None:
         """
@@ -773,6 +799,7 @@ class MemoryStore:
         similar_memories = await self.search(
             query=content,
             n_results=max_links,
+            track_access=False,
         )
 
         # 閾値以下の記憶をフィルタ
@@ -807,6 +834,8 @@ class MemoryStore:
             documents=[content],
             metadatas=[memory.to_metadata()],
         )
+
+        await self._working_memory.add(memory)
 
         # 双方向リンクを追加
         for target_id in linked_ids:

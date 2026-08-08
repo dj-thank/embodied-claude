@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from mcp.types import CallToolRequest, CallToolRequestParams
 
+from memory_mcp.memory import MemoryStore
 from memory_mcp.server import MemoryMCPServer
 from memory_mcp.types import Memory, MemorySearchResult
 
@@ -74,3 +75,41 @@ async def test_tom_wraps_recalled_memory_as_untrusted_structured_data() -> None:
     assert payload["trust"] == "untrusted"
     assert payload["items"][0]["content"] == injected_content
     assert "</untrusted-memory-data>" not in payload_text
+
+
+@pytest.mark.asyncio
+async def test_remember_default_auto_link_updates_working_memory(
+    memory_store: MemoryStore,
+) -> None:
+    server = MemoryMCPServer()
+    server._memory_store = memory_store
+
+    result = await call_tool(
+        server,
+        "remember",
+        {"content": "公開 MCP から保存した記憶"},
+    )
+
+    assert result.isError is False
+    recent = await memory_store.get_working_memory().get_recent(n=5)
+    assert [memory.content for memory in recent] == ["公開 MCP から保存した記憶"]
+
+
+@pytest.mark.asyncio
+async def test_search_memories_records_access_through_mcp(
+    memory_store: MemoryStore,
+) -> None:
+    memory = await memory_store.save(content="公開 MCP から検索する記憶")
+    server = MemoryMCPServer()
+    server._memory_store = memory_store
+
+    result = await call_tool(
+        server,
+        "search_memories",
+        {"query": "公開 MCP の記憶", "n_results": 1},
+    )
+
+    assert result.isError is False
+    updated = await memory_store.get_by_id(memory.id)
+    assert updated is not None
+    assert updated.access_count == 1
