@@ -241,7 +241,11 @@ class TapoCamera:
                     logger.info("Reconnected on attempt %d", attempt)
                     return
                 except Exception as e:
-                    logger.error("Reconnect attempt %d failed: %s", attempt, e)
+                    logger.error(
+                        "Reconnect attempt %d failed: %s",
+                        attempt,
+                        _redact_credentials(str(e)),
+                    )
                     if attempt < MAX_RECONNECT_RETRIES:
                         await asyncio.sleep(RECONNECT_DELAY)
             raise RuntimeError(
@@ -261,7 +265,10 @@ class TapoCamera:
                 for keyword in ["connection", "timeout", "refused", "reset", "broken"]
             )
             if is_connection_error:
-                logger.warning("Connection error during operation, reconnecting: %s", e)
+                logger.warning(
+                    "Connection error during operation, reconnecting: %s",
+                    _redact_credentials(str(e)),
+                )
                 self._connected = False
                 self._cam = None
                 await self._ensure_connected()
@@ -446,12 +453,21 @@ class TapoCamera:
         Returns:
             MoveResult with operation status
         """
-        return await self._with_reconnect(self._move_impl, direction, degrees)
+        normalized_degrees = max(1, min(degrees, 90))
+        try:
+            return await self._with_reconnect(
+                self._move_impl, direction, normalized_degrees
+            )
+        except Exception as e:
+            return MoveResult(
+                direction=direction,
+                degrees=normalized_degrees,
+                success=False,
+                message=f"Failed to move: {_redact_credentials(str(e))}",
+            )
 
     async def _move_impl(self, direction: Direction, degrees: int) -> MoveResult:
         """Internal move implementation."""
-        degrees = max(1, min(degrees, 90))
-
         # Convert degrees to ONVIF normalized values
         pan_delta = 0.0
         tilt_delta = 0.0
@@ -475,46 +491,38 @@ class TapoCamera:
             pan_delta = -pan_delta
             tilt_delta = -tilt_delta
 
-        try:
-            # Build the RelativeMove request as a dict.
-            # create_type("RelativeMove") leaves nested structures as None,
-            # so we construct the full structure ourselves.
-            await self._ptz_service.RelativeMove(
-                {
-                    "ProfileToken": self._profile_token,
-                    "Translation": {
-                        "PanTilt": {"x": pan_delta, "y": tilt_delta},
-                    },
-                }
-            )
+        # Build the RelativeMove request as a dict.
+        # create_type("RelativeMove") leaves nested structures as None,
+        # so we construct the full structure ourselves.
+        await self._ptz_service.RelativeMove(
+            {
+                "ProfileToken": self._profile_token,
+                "Translation": {
+                    "PanTilt": {"x": pan_delta, "y": tilt_delta},
+                },
+            }
+        )
 
-            # Update software tracking as well
-            match direction:
-                case Direction.LEFT:
-                    self._sw_position.pan = max(-180.0, self._sw_position.pan - degrees)
-                case Direction.RIGHT:
-                    self._sw_position.pan = min(180.0, self._sw_position.pan + degrees)
-                case Direction.UP:
-                    self._sw_position.tilt = min(90.0, self._sw_position.tilt + degrees)
-                case Direction.DOWN:
-                    self._sw_position.tilt = max(-90.0, self._sw_position.tilt - degrees)
+        # Update software tracking only after the physical command succeeds.
+        match direction:
+            case Direction.LEFT:
+                self._sw_position.pan = max(-180.0, self._sw_position.pan - degrees)
+            case Direction.RIGHT:
+                self._sw_position.pan = min(180.0, self._sw_position.pan + degrees)
+            case Direction.UP:
+                self._sw_position.tilt = min(90.0, self._sw_position.tilt + degrees)
+            case Direction.DOWN:
+                self._sw_position.tilt = max(-90.0, self._sw_position.tilt - degrees)
 
-            # Give the motor time to move
-            await asyncio.sleep(0.5)
+        # Give the motor time to move
+        await asyncio.sleep(0.5)
 
-            return MoveResult(
-                direction=direction,
-                degrees=degrees,
-                success=True,
-                message=f"Moved {direction.value} by {degrees} degrees",
-            )
-        except Exception as e:
-            return MoveResult(
-                direction=direction,
-                degrees=degrees,
-                success=False,
-                message=f"Failed to move: {e!s}",
-            )
+        return MoveResult(
+            direction=direction,
+            degrees=degrees,
+            success=True,
+            message=f"Moved {direction.value} by {degrees} degrees",
+        )
 
     def get_position(self) -> CameraPosition:
         """Get current camera position (software-tracked).

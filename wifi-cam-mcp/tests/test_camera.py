@@ -79,3 +79,90 @@ async def test_look_around_restores_position_when_capture_fails(tmp_path: Path) 
         await camera.look_around()
 
     assert moves == [(Direction.LEFT, 45), (Direction.RIGHT, 45)]
+
+
+@pytest.mark.asyncio
+async def test_move_reconnects_after_transient_connection_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    camera = TapoCamera(_config())
+    relative_move_calls = 0
+    ensure_connected_calls = 0
+
+    class FlakyPtzService:
+        async def RelativeMove(self, request: dict[str, object]) -> None:  # noqa: N802
+            nonlocal relative_move_calls
+            relative_move_calls += 1
+            if relative_move_calls == 1:
+                raise TimeoutError("ONVIF connection timeout")
+
+    service = FlakyPtzService()
+    camera._connected = True
+    camera._cam = object()
+    camera._ptz_service = service
+    camera._profile_token = "profile-1"
+
+    async def fake_ensure_connected() -> None:
+        nonlocal ensure_connected_calls
+        ensure_connected_calls += 1
+        camera._connected = True
+        camera._cam = object()
+        camera._ptz_service = service
+
+    async def no_sleep(delay: float) -> None:
+        return None
+
+    camera._ensure_connected = fake_ensure_connected  # type: ignore[method-assign]
+    monkeypatch.setattr("wifi_cam_mcp.camera.asyncio.sleep", no_sleep)
+
+    result = await camera.move(Direction.LEFT, 30)
+
+    assert result.success is True
+    assert relative_move_calls == 2
+    assert ensure_connected_calls == 2
+    assert camera.get_position().pan == -30
+
+
+@pytest.mark.asyncio
+async def test_move_returns_redacted_failure_after_reconnect_is_exhausted(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    camera = TapoCamera(_config())
+    relative_move_calls = 0
+    ensure_connected_calls = 0
+
+    class FailingPtzService:
+        async def RelativeMove(self, request: dict[str, object]) -> None:  # noqa: N802
+            nonlocal relative_move_calls
+            relative_move_calls += 1
+            raise TimeoutError(
+                "RTSP timeout at rtsp://camera-user:camera-password@camera.local/live"
+            )
+
+    service = FailingPtzService()
+    camera._connected = True
+    camera._cam = object()
+    camera._ptz_service = service
+    camera._profile_token = "profile-1"
+
+    async def fake_ensure_connected() -> None:
+        nonlocal ensure_connected_calls
+        ensure_connected_calls += 1
+        camera._connected = True
+        camera._cam = object()
+        camera._ptz_service = service
+
+    camera._ensure_connected = fake_ensure_connected  # type: ignore[method-assign]
+    caplog.set_level("WARNING", logger="wifi_cam_mcp.camera")
+
+    result = await camera.move(Direction.RIGHT, 120)
+
+    assert result.success is False
+    assert result.degrees == 90
+    assert relative_move_calls == 2
+    assert ensure_connected_calls == 2
+    assert camera.get_position().pan == 0
+    assert "camera-password" not in result.message
+    assert "rtsp://camera-user:<redacted>@camera.local/live" in result.message
+    assert "camera-password" not in caplog.text
+    assert "rtsp://camera-user:<redacted>@camera.local/live" in caplog.text

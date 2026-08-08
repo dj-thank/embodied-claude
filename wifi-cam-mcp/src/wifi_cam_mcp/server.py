@@ -9,16 +9,41 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
+    CallToolResult,
     ImageContent,
     TextContent,
     Tool,
 )
 
-from .camera import TapoCamera, _normalize_duration
+from .camera import MoveResult, TapoCamera, _normalize_duration
 from .config import CameraConfig, ServerConfig
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _stereo_failure_result(
+    left_result: MoveResult, right_result: MoveResult
+) -> CallToolResult | None:
+    """Return an MCP error when either side of a stereo move fails."""
+    if left_result.success and right_result.success:
+        return None
+
+    left_status = "success" if left_result.success else "failed"
+    right_status = "success" if right_result.success else "failed"
+    return CallToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=(
+                    "Stereo move failed: "
+                    f"left={left_status} ({left_result.message}); "
+                    f"right={right_status} ({right_result.message})"
+                ),
+            )
+        ],
+        isError=True,
+    )
 
 
 class CameraMCPServer:
@@ -374,7 +399,7 @@ class CameraMCPServer:
         @self._server.call_tool()
         async def call_tool(
             name: str, arguments: dict[str, Any]
-        ) -> list[TextContent | ImageContent]:
+        ) -> list[TextContent | ImageContent] | CallToolResult:
             """Handle tool calls."""
             if self._camera is None:
                 return [TextContent(type="text", text="Error: Camera not connected")]
@@ -574,7 +599,12 @@ class CameraMCPServer:
                         degrees = arguments.get("degrees", 30)
                         left_task = self._camera.pan_left(degrees)
                         right_task = self._camera_right.pan_left(degrees)
-                        await asyncio.gather(left_task, right_task)
+                        left_result, right_result = await asyncio.gather(
+                            left_task, right_task
+                        )
+                        failure = _stereo_failure_result(left_result, right_result)
+                        if failure:
+                            return failure
                         return [
                             TextContent(
                                 type="text", text=f"Both eyes moved left by {degrees} degrees"
@@ -589,7 +619,12 @@ class CameraMCPServer:
                         degrees = arguments.get("degrees", 30)
                         left_task = self._camera.pan_right(degrees)
                         right_task = self._camera_right.pan_right(degrees)
-                        await asyncio.gather(left_task, right_task)
+                        left_result, right_result = await asyncio.gather(
+                            left_task, right_task
+                        )
+                        failure = _stereo_failure_result(left_result, right_result)
+                        if failure:
+                            return failure
                         return [
                             TextContent(
                                 type="text", text=f"Both eyes moved right by {degrees} degrees"
@@ -604,7 +639,12 @@ class CameraMCPServer:
                         degrees = arguments.get("degrees", 20)
                         left_task = self._camera.tilt_up(degrees)
                         right_task = self._camera_right.tilt_up(degrees)
-                        await asyncio.gather(left_task, right_task)
+                        left_result, right_result = await asyncio.gather(
+                            left_task, right_task
+                        )
+                        failure = _stereo_failure_result(left_result, right_result)
+                        if failure:
+                            return failure
                         return [
                             TextContent(
                                 type="text", text=f"Both eyes tilted up by {degrees} degrees"
@@ -619,7 +659,12 @@ class CameraMCPServer:
                         degrees = arguments.get("degrees", 20)
                         left_task = self._camera.tilt_down(degrees)
                         right_task = self._camera_right.tilt_down(degrees)
-                        await asyncio.gather(left_task, right_task)
+                        left_result, right_result = await asyncio.gather(
+                            left_task, right_task
+                        )
+                        failure = _stereo_failure_result(left_result, right_result)
+                        if failure:
+                            return failure
                         return [
                             TextContent(
                                 type="text", text=f"Both eyes tilted down by {degrees} degrees"
