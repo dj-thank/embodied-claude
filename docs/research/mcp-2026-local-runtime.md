@@ -14,7 +14,7 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
 - 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature、USB Webcam、ElevenLabs TTS、Wi-Fi Camera、Memoryはtyped registryへ移行した。Memoryは手書きschemaと旧routerを除去し、既存挙動をprivate dispatcherへ集約した段階である。
-- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、5 MCPのSDK v2実装後のテストは8パッケージ、計479件がPASSした。Memory変更範囲では253件、local inferenceは53件、action-policyは41件、Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーやcamera hardwareのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
+- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、5 MCPのSDK v2実装後のテストは8パッケージ、計480件がPASSした。Memory変更範囲では253件、local inferenceは54件、action-policyは41件、Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーやcamera hardwareのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
 
 ## 一次情報から確認した変更点
 
@@ -106,6 +106,14 @@ exact memory ID bindingを維持し、ToMへ渡す永続記憶は未信頼JSON�
 toolはtext fallbackとstructuredContentを同時に返し、UIはhost theme変数、初回tool result、read-only
 refreshに対応する。Apps capability、tool metadata、resource MIME、structured resultは自動試験済みで、
 Edge headlessによるローカル描画も確認した。MCP Apps対応実ホストでのiframe表示は未検証である。
+
+Local Inference MCPにも`ui://sanpoloid/local-inference.html`を追加した。接続状態、loopback endpoint、
+model一覧、prompt、preset、応答、token使用量を同じ自己完結Appで扱い、UIから呼べるtoolは既存の
+statusとbounded inferenceに限定した。Apps対応／非対応clientのtool discoveryとtext fallback、
+resource MIME、UI metadataを自動試験し、Edge headlessの実描画を
+`outputs/local-inference-mcp-app-20260809.png`（SHA-256
+`92D4037257A6668B7134EA48C1FAD2F2CF61D0EF02FCBB20F7F5775F843DC21A`）で確認した。
+実MCP hostのiframeと実model操作は未検証である。
 
 ### Local Inference pilot 実装状況（2026-08-09）
 

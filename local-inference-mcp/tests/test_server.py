@@ -5,9 +5,11 @@ from dataclasses import dataclass
 
 import pytest
 from mcp import Client, StdioServerParameters, stdio_client
+from mcp.client import advertise
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from local_inference_mcp.inference import InferenceResult
-from local_inference_mcp.server import create_server
+from local_inference_mcp.server import DASHBOARD_URI, create_server
 
 
 @dataclass
@@ -117,3 +119,33 @@ async def test_json_completion_exposes_parsed_structured_content(mode: str) -> N
 
     assert result.is_error is False
     assert result.structured_content["parsed_json"] == {"状態": "正常"}
+
+
+@pytest.mark.asyncio
+async def test_tools_expose_a_network_free_local_inference_app() -> None:
+    extension = advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})
+
+    async with Client(
+        create_server(lambda: StubInference()), extensions=[extension]
+    ) as client:
+        tools = await client.list_tools()
+        resources = await client.list_resources()
+        status = await client.call_tool("get_local_inference_status", {})
+        resource = await client.read_resource(DASHBOARD_URI)
+
+    assert [item.uri for item in resources.resources] == [DASHBOARD_URI]
+    for tool in tools.tools:
+        assert tool.meta == {
+            "ui": {
+                "resourceUri": DASHBOARD_URI,
+                "visibility": ["model", "app"],
+            }
+        }
+    html = resource.contents[0].text
+    assert resource.contents[0].mime_type == APP_MIME_TYPE
+    assert "ui/notifications/tool-result" in html
+    assert '"ask_local_model"' in html
+    assert '"get_local_inference_status"' in html
+    assert "http://" not in html
+    assert "https://" not in html
+    assert status.structured_content["models"] == ["local-jp"]

@@ -255,6 +255,7 @@ uv run local-inference-mcp
 
 このMCPはLM Studioとllama.cppが共有するOpenAI-compatible endpointへ接続する。
 loopback以外のURL、OS proxy、HTTP redirectを拒否し、server起動やmodel取得を勝手に行わない。
+対応ホストでは、接続状態、model、prompt、応答をまとめた自己完結MCP Appを表示する。
 詳しい制限と環境変数は[local-inference-mcp README](./local-inference-mcp/)を参照。
 
 ### 3. Claude Code 設定

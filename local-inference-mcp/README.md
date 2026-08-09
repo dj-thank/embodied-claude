@@ -51,6 +51,11 @@ uv run local-inference-mcp
 - `get_local_inference_status`: endpointとmodel一覧を確認する。serverやmodelは起動しない
 - `ask_local_model`: boundedな非streaming text completionを実行する
 
+両toolは同じ`ui://sanpoloid/local-inference.html` MCP Appに接続する。対応hostでは、loopback
+endpointの接続状態、model一覧、prompt、preset、応答とtoken使用量を一画面で確認できる。
+HTMLは自己完結で外部resourceを取得せず、Appから呼べるのも既存の2 toolだけである。Apps非対応
+hostでは従来どおりtext／structured contentが返り、server起動やmodel load機能は追加しない。
+
 `ask_local_model`の`preset`は`default`、`strict`、`concise`、`json`から選択する。
 プリセットはモデル自体を変更せず、用途別のsystem instructionを加える。`json`はLM Studioと
 llama.cppのJSON Schema制約を要求し、任意の`json_schema`（最大16 KiB）も渡せる。schemaを

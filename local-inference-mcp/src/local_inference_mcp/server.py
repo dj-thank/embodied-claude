@@ -6,8 +6,10 @@ from collections.abc import Callable
 from typing import Any
 
 from mcp.server import MCPServer
+from mcp.server.apps import Apps
 
 from .config import InferenceConfig
+from .dashboard import DASHBOARD_HTML, DASHBOARD_URI
 from .inference import LocalInference, UrllibJsonTransport
 from .prompts import PromptPreset
 
@@ -20,9 +22,18 @@ def _default_inference() -> LocalInference:
 
 def create_server(inference_factory: InferenceFactory = _default_inference) -> MCPServer:
     """Create the server with an injectable inference adapter."""
-    server = MCPServer("local-inference-mcp")
-
-    @server.tool(
+    apps = Apps()
+    apps.add_html_resource(
+        DASHBOARD_URI,
+        DASHBOARD_HTML,
+        name="sanpoloid_local_inference",
+        title="Sanpoloid Local Mind",
+        description="Loopback-only local model status and inference playground",
+        prefers_border=False,
+    )
+    @apps.tool(
+        resource_uri=DASHBOARD_URI,
+        visibility=["model", "app"],
         name="get_local_inference_status",
         description=(
             "Check the configured loopback-only local LLM endpoint and list its models. "
@@ -32,7 +43,9 @@ def create_server(inference_factory: InferenceFactory = _default_inference) -> M
     def get_local_inference_status() -> dict[str, Any]:
         return inference_factory().status()
 
-    @server.tool(
+    @apps.tool(
+        resource_uri=DASHBOARD_URI,
+        visibility=["model", "app"],
         name="ask_local_model",
         description=(
             "Ask a loopback-only local LLM to perform bounded local text inference. "
@@ -59,6 +72,7 @@ def create_server(inference_factory: InferenceFactory = _default_inference) -> M
         )
         return result.as_dict()
 
+    server = MCPServer("local-inference-mcp", extensions=[apps])
     return server
 
 
