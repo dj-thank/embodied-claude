@@ -9,6 +9,7 @@ This repository contains multiple Python MCP servers that give Claude "senses" (
 - `elevenlabs-t2s-mcp/`: ElevenLabs text-to-speech (`src/elevenlabs_t2s_mcp/`).
 - `memory-mcp/`: Long‑term memory server (`src/memory_mcp/`) with tests in `memory-mcp/tests/`.
 - `system-temperature-mcp/`: System temperature sensor (`src/system_temperature_mcp/`).
+- `local-inference-mcp/`: Loopback-only LM Studio / llama.cpp inference helper.
 - `action-policy/`: Host-side PreToolUse action gate and the explicit classification for every embodied MCP tool.
 - `installer/`: PyInstaller-based GUI installer.
 - `.claude/`: Claude Code local settings.
@@ -23,7 +24,8 @@ Run commands from the target subproject directory.
 - `uv run --extra dev ruff check .`: Lint a subproject.
 
 ## Coding Style & Naming Conventions
-- Python 3.10+ baseline; `system-temperature-mcp/` and `installer/` require Python 3.12+.
+- Python 3.10+ baseline; `system-temperature-mcp/`, `local-inference-mcp/`, and
+  `installer/` require Python 3.12+.
 - 4‑space indentation, `snake_case` modules, `test_*.py` tests.
 - Ruff line length is 100; asyncio is the default style for async work.
 

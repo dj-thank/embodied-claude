@@ -147,6 +147,43 @@ class CameraSelectionPage(QWizardPage):
         )
         component_layout.addWidget(self.use_system_temperature)
 
+        self.use_local_inference = QCheckBox(
+            "Enable local LLM helper (loopback only)"
+        )
+        self.use_local_inference.stateChanged.connect(
+            self._on_local_inference_changed
+        )
+        component_layout.addWidget(self.use_local_inference)
+
+        self.local_inference_form = QWidget()
+        local_inference_form_layout = QFormLayout()
+        self.local_inference_backend = QComboBox()
+        self.local_inference_backend.addItems(
+            [
+                "LM Studio (127.0.0.1:1234)",
+                "llama.cpp (127.0.0.1:8080)",
+            ]
+        )
+        local_inference_form_layout.addRow(
+            "Runtime:", self.local_inference_backend
+        )
+        self.local_inference_model = QLineEdit()
+        self.local_inference_model.setPlaceholderText(
+            "Model ID (required, for example sanpoloid-local)"
+        )
+        local_inference_form_layout.addRow("Model:", self.local_inference_model)
+        self.local_inference_form.setLayout(local_inference_form_layout)
+        self.local_inference_form.hide()
+        component_layout.addWidget(self.local_inference_form)
+        self.local_inference_note = QLabel(
+            "🔒 Prompts stay on 127.0.0.1. Start and load the model separately; "
+            "an optional API token is read from the launch environment."
+        )
+        self.local_inference_note.setWordWrap(True)
+        self.local_inference_note.setStyleSheet("QLabel { color: #94a3b8; }")
+        self.local_inference_note.hide()
+        component_layout.addWidget(self.local_inference_note)
+
         self.use_elevenlabs = QCheckBox("Enable ElevenLabs speech output")
         component_layout.addWidget(self.use_elevenlabs)
         elevenlabs_note = QLabel(
@@ -195,6 +232,14 @@ class CameraSelectionPage(QWizardPage):
         self.registerField(
             "system_temperature_enabled", self.use_system_temperature
         )
+        self.registerField("local_inference_enabled", self.use_local_inference)
+        self.registerField(
+            "local_inference_backend",
+            self.local_inference_backend,
+            "currentText",
+            self.local_inference_backend.currentTextChanged,
+        )
+        self.registerField("local_inference_model", self.local_inference_model)
         self.registerField("elevenlabs_enabled", self.use_elevenlabs)
 
         self._updating_profile = False
@@ -205,6 +250,7 @@ class CameraSelectionPage(QWizardPage):
             self.use_usb_camera,
             self.use_memory,
             self.use_system_temperature,
+            self.use_local_inference,
             self.use_elevenlabs,
         ):
             checkbox.stateChanged.connect(self._on_components_changed)
@@ -261,8 +307,16 @@ class CameraSelectionPage(QWizardPage):
             "usb_camera_enabled": self.use_usb_camera,
             "memory_enabled": self.use_memory,
             "system_temperature_enabled": self.use_system_temperature,
+            "local_inference_enabled": self.use_local_inference,
             "elevenlabs_enabled": self.use_elevenlabs,
         }
+
+    def _on_local_inference_changed(self, state: int) -> None:
+        """Show local runtime selection only when its MCP is enabled."""
+        enabled = state == Qt.CheckState.Checked.value
+        self.local_inference_form.setVisible(enabled)
+        self.local_inference_note.setVisible(enabled)
+        self.completeChanged.emit()
 
     def _on_wifi_camera_changed(self, state):
         """Show Wi-Fi details only when that body module is selected."""
@@ -321,6 +375,11 @@ class CameraSelectionPage(QWizardPage):
         ):
             return False
 
+        if self.use_local_inference.isChecked() and not (
+            self.local_inference_model.text().strip()
+        ):
+            return False
+
         return any(
             checkbox.isChecked()
             for checkbox in (
@@ -328,6 +387,7 @@ class CameraSelectionPage(QWizardPage):
                 self.use_usb_camera,
                 self.use_memory,
                 self.use_system_temperature,
+                self.use_local_inference,
                 self.use_elevenlabs,
             )
         )

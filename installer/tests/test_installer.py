@@ -52,6 +52,7 @@ def test_runtime_profile_selection_updates_visible_components(
     assert page.memory_backend.currentText().startswith("SQLite")
     assert page.use_system_temperature.isChecked()
     assert not page.use_elevenlabs.isChecked()
+    assert not page.use_local_inference.isChecked()
 
     page.runtime_profile.setCurrentText("Full")
     assert page.use_wifi_camera.isChecked()
@@ -62,6 +63,20 @@ def test_runtime_profile_selection_updates_visible_components(
     assert page.memory_backend.currentText().startswith("Chroma")
     assert page.use_system_temperature.isChecked()
     assert page.use_elevenlabs.isChecked()
+    assert page.use_local_inference.isChecked()
+    assert not page.local_inference_form.isHidden()
+
+
+def test_local_inference_selection_requires_an_explicit_model(
+    qapp: QApplication,
+) -> None:
+    page = CameraSelectionPage()
+    page.runtime_profile.setCurrentText("Lite")
+    page.use_local_inference.setChecked(True)
+
+    assert not page.isComplete()
+    page.local_inference_model.setText("sanpoloid-local")
+    assert page.isComplete()
 
 
 def test_profile_precedes_dependency_check_and_changes_requirements(

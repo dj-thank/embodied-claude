@@ -69,6 +69,12 @@ COMPONENTS = (
         executable="system-temperature-mcp",
     ),
     MCPComponent(
+        server_id="local-inference",
+        selection_flag="local_inference_enabled",
+        project_directory="local-inference-mcp",
+        executable="local-inference-mcp",
+    ),
+    MCPComponent(
         server_id="elevenlabs-t2s",
         selection_flag="elevenlabs_enabled",
         project_directory="elevenlabs-t2s-mcp",
@@ -103,7 +109,9 @@ PROFILE_DESCRIPTIONS = {
     RuntimeProfile.CORE: (
         "Recommended body: Wi-Fi camera, long-term memory, and temperature."
     ),
-    RuntimeProfile.FULL: "Every MCP, including USB camera and ElevenLabs speech output.",
+    RuntimeProfile.FULL: (
+        "Every MCP, including local inference, USB camera, and ElevenLabs speech output."
+    ),
     RuntimeProfile.CUSTOM: "Your explicit module selection.",
 }
 
@@ -185,6 +193,16 @@ def resolve_memory_backend(config: Mapping[str, Any]) -> str:
     raise ValueError("memory_backend must select SQLite or Chroma")
 
 
+def resolve_local_inference_backend(config: Mapping[str, Any]) -> tuple[str, str]:
+    """Resolve a fixed loopback runtime label into its identifier and base URL."""
+    raw_value = str(config.get("local_inference_backend", "lmstudio")).strip().lower()
+    if raw_value.startswith("lm studio") or raw_value == "lmstudio":
+        return "lmstudio", "http://127.0.0.1:1234/v1"
+    if raw_value.startswith("llama.cpp") or raw_value == "llama.cpp":
+        return "llama.cpp", "http://127.0.0.1:8080/v1"
+    raise ValueError("local_inference_backend must select LM Studio or llama.cpp")
+
+
 def dependency_projects(
     repo_path: Path,
     config: Mapping[str, Any],
@@ -232,6 +250,13 @@ def runtime_config_from_fields(
     config["memory_backend"] = resolve_memory_backend(
         {**config, "memory_backend": field_value("memory_backend")}
     )
+    backend, _base_url = resolve_local_inference_backend(
+        {"local_inference_backend": field_value("local_inference_backend")}
+    )
+    config["local_inference_backend"] = backend
+    config["local_inference_model"] = str(
+        field_value("local_inference_model") or ""
+    ).strip()
     return config
 
 
@@ -256,6 +281,12 @@ def build_mcp_config(repo_path: Path, config: Mapping[str, Any]) -> dict[str, An
             )
         elif server_id == "memory":
             environment["MEMORY_BACKEND"] = resolve_memory_backend(config)
+        elif server_id == "local-inference":
+            _backend, base_url = resolve_local_inference_backend(config)
+            environment["SANPOLOID_LOCAL_LLM_BASE_URL"] = base_url
+            model = str(config.get("local_inference_model", "")).strip()
+            if model:
+                environment["SANPOLOID_LOCAL_LLM_MODEL"] = model
         arguments = [
             "run",
             "--directory",

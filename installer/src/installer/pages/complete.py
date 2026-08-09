@@ -17,6 +17,7 @@ _SERVER_DESCRIPTIONS = {
     "usb-webcam": "Eyes (USB webcam)",
     "memory": "Long-term memory",
     "system-temperature": "Body temperature sense",
+    "local-inference": "Inner voice (loopback local LLM helper)",
     "elevenlabs-t2s": "Voice (ElevenLabs; API key supplied externally)",
 }
 

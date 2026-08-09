@@ -10,11 +10,11 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 
 ## 現在のコードから確認できたこと
 
-- 5 個の MCP サーバーと ElevenLabs 連携があり、合計 51 ツールを action policy が分類している。
+- 既存5 MCPにlocal-inference MCPを加え、合計53ツールをaction policyが分類している。
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
 - 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature は今回 typed registry へ移行し、残るサーバーは段階移行中である。
-- Runtime Profile、Memory Lite、SDK v2 / Apps pilot 実装後のテストは 7 パッケージ、計 376 件が PASS し、各 Ruff 検査も PASS した。これはローカル検証であり、実機、各 MCP ホスト、外部プロバイダーの E2E を証明しない。
+- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot実装後のテストは8パッケージ、計414件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、実機、各MCPホスト、外部プロバイダーのE2Eを証明しない。
 
 ## 一次情報から確認した変更点
 
@@ -43,7 +43,6 @@ MCPB は manifest とサーバーを `.mcpb` にまとめ、ホスト側のイ�
 最初の段階として Runtime Profile moduleを実装した。Lite / Core / Full / Customから、
 installer UI、dependency project、host dependency、MCP config、action gateを導出する。
 profile切替時はSanpoloid所有の旧server設定だけを除去し、ユーザー所有MCPを保持する。
-ローカル推論backendは、この時点では未実装である。
 
 ### Memory Lite 実装状況（2026-08-09）
 
@@ -69,6 +68,26 @@ modern auto接続と旧initialize接続が同じ2ツールを公開すること�
 toolはtext fallbackとstructuredContentを同時に返し、UIはhost theme変数、初回tool result、read-only
 refreshに対応する。Apps capability、tool metadata、resource MIME、structured resultは自動試験済みで、
 Edge headlessによるローカル描画も確認した。MCP Apps対応実ホストでのiframe表示は未検証である。
+
+### Local Inference pilot 実装状況（2026-08-09）
+
+`local-inference-mcp`を追加し、LM Studioとllama.cppが共有するOpenAI-compatible
+`/v1/models`と`/v1/chat/completions`を小さいinterfaceで扱う。endpointはloopback限定で、
+proxyを無効化しredirectを拒否する。prompt、token、response、timeoutに上限を設け、server起動、
+model download/load、MCP tool loopは行わない。installerのFull/CustomからLM Studioまたはllama.cppを
+選択でき、API tokenは収集しない。in-memory transportとmodern/legacy MCP clientによる自動試験は
+実装済みである。ローカル実機では既存の`LFM2.5 1.2B JP 202606 Q4_K_M`（697.04 MiB）を
+LM Studioへ4,096 contextで一時loadし、合成日本語promptをdirect moduleと実MCP stdio processの
+2経路で実行した。初回はload 5.77秒、推論2.134秒、cache後のstdio E2Eはload 2.06秒、
+tool call 0.523秒だった（各prompt 48、completion 19、total 67 token）。終了後にmodelをunloadし、
+serverをOFFへ戻した。一方、stdio E2Eの出力は「さんぽ」を「さっぽろ」と誤り、一文だけという
+制約にも従わなかった。したがって接続・推論経路はPASSだが、日本語品質と指示追従はFAILである。
+長文性能、継続負荷、他環境での速度も未検証である。
+
+Full profileにlocal inference選択を追加したWindows one-file installerも再ビルドした。
+最終EXEは36,466,696 bytes、SHA-256
+`49685FDD4CDB27E1A432BBC5A5861C05224B8AB883A8C128B67BA9E08C86F694`である。
+同一pathのone-file親子2 processが起動後も生存することを確認し、確認後は両方を終了して残存0とした。
 
 ## 一次情報
 

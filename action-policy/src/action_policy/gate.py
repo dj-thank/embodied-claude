@@ -131,6 +131,16 @@ _TOOL_ACTION_CLASSES: dict[str, ActionClass] = {
         {"get_system_temperature", "get_current_time"},
         ActionClass.READ_ONLY,
     ),
+    **_names(
+        "local-inference",
+        {"get_local_inference_status"},
+        ActionClass.READ_ONLY,
+    ),
+    **_names(
+        "local-inference",
+        {"ask_local_model"},
+        ActionClass.LOCAL_BOOKKEEPING,
+    ),
     **_names("elevenlabs-t2s", {"say"}, ActionClass.EXTERNAL_SPEECH),
 }
 

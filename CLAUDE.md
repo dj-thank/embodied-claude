@@ -30,6 +30,12 @@ embodied-claude/
 │   └── src/system_temperature_mcp/
 │       └── server.py      # 温度センサー読み取り
 │
+├── local-inference-mcp/   # loopback ローカルLLM helper(Python)
+│   └── src/local_inference_mcp/
+│       ├── server.py      # typed MCP interface
+│       ├── inference.py   # OpenAI-compatible推論module
+│       └── config.py      # loopback限定設定
+│
 ├── action-policy/         # PreToolUse 中央行動ゲート(Python)
 │   └── src/action_policy/
 │       ├── gate.py        # tool分類 + allow/ask/deny
@@ -158,6 +164,13 @@ uv run --extra dev pytest -v       # テストが通ること
 |--------|-----------|------|
 | `get_system_temperature` | なし | システム温度 |
 | `get_current_time` | なし | 現在時刻 |
+
+### local-inference-mcp(内なる声)
+
+| ツール | パラメータ | 説明 |
+|--------|-----------|------|
+| `get_local_inference_status` | なし | loopback endpointとmodel一覧を確認 |
+| `ask_local_model` | prompt, system_prompt?, model?, temperature?, max_tokens? | 短いテキスト作業をローカルLLMへ委譲 |
 
 ## 注意事項
 

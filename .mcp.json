@@ -26,6 +26,14 @@
       "args": ["run", "--directory", "system-temperature-mcp", "system-temperature-mcp"],
       "env": {}
     },
+    "local-inference": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--directory", "local-inference-mcp", "local-inference-mcp"],
+      "env": {
+        "SANPOLOID_LOCAL_LLM_BASE_URL": "http://127.0.0.1:1234/v1"
+      }
+    },
     "elevenlabs-t2s": {
       "type": "stdio",
       "command": "uv",

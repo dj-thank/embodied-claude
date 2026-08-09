@@ -15,6 +15,8 @@ from action_policy import ActionClass, ActionGate, GateVerdict
         "mcp__wifi-cam__camera_info",
         "mcp__memory__recall",
         "mcp__memory__prepare_forget",
+        "mcp__local-inference__get_local_inference_status",
+        "mcp__local-inference__ask_local_model",
     ],
 )
 def test_interactive_mode_allows_non_outward_tools(tool_name: str) -> None:
@@ -40,6 +42,20 @@ def test_memory_retrieval_with_metadata_updates_is_local_bookkeeping(
 
     assert decision.action_class is ActionClass.LOCAL_BOOKKEEPING
     assert decision.verdict is GateVerdict.ALLOW
+
+
+def test_local_inference_status_and_generation_have_explicit_non_outward_classes() -> None:
+    status = ActionGate(mode="interactive").evaluate(
+        "mcp__local-inference__get_local_inference_status", {}
+    )
+    generation = ActionGate(mode="interactive").evaluate(
+        "mcp__local-inference__ask_local_model", {"prompt": "private local text"}
+    )
+
+    assert status.action_class is ActionClass.READ_ONLY
+    assert generation.action_class is ActionClass.LOCAL_BOOKKEEPING
+    assert status.verdict is GateVerdict.ALLOW
+    assert generation.verdict is GateVerdict.ALLOW
 
 
 @pytest.mark.parametrize(
@@ -154,6 +170,9 @@ def test_every_embodied_mcp_tool_has_an_explicit_classification() -> None:
         "elevenlabs-t2s": (
             repo_root / "elevenlabs-t2s-mcp/src/elevenlabs_t2s_mcp/server.py"
         ),
+        "local-inference": (
+            repo_root / "local-inference-mcp/src/local_inference_mcp/server.py"
+        ),
     }
     discovered: set[str] = set()
     for server_name, path in servers.items():
@@ -190,7 +209,7 @@ def test_every_embodied_mcp_tool_has_an_explicit_classification() -> None:
                         tool_name = str(name_keyword.value.value)
                     discovered.add(f"mcp__{server_name}__{tool_name}")
 
-    assert len(discovered) == 51
+    assert len(discovered) == 53
     unclassified = {
         tool_name
         for tool_name in discovered

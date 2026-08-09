@@ -13,10 +13,11 @@ GUI installer for Embodied Claude MCP servers.
 - ✅ User-scope Sanpoloid action gate (~/.claude/settings.json)
 - ✅ Reproducible dependency installation (`uv sync --locked`)
 - ✅ Preserving, atomic settings merge with recoverable backups
-- ✅ Does not collect or store Claude authentication keys
+- ✅ Loopback-only LM Studio / llama.cpp local inference selection
+- ✅ Does not collect or store Claude or local-inference authentication keys
 
 The installer syncs `action-policy` before exposing MCP servers globally. It then merges one
-`PreToolUse` hook for the five Sanpoloid MCP server prefixes while preserving existing user hooks.
+`PreToolUse` hook for the six Sanpoloid MCP server prefixes while preserving existing user hooks.
 Re-running the installer replaces only its own prior handler. Local user hooks are not loaded by
 Claude Code cloud sessions, and an administrator can restrict user-managed hooks.
 
@@ -29,7 +30,7 @@ user-owned MCP servers remain untouched. API keys are not collected by the insta
 |---|---|---|
 | Lite | memory (SQLite FTS), system-temperature | Lightweight memory with no vector DB or media tooling |
 | Core | wifi-cam, memory, system-temperature | Recommended embodied baseline |
-| Full | all five servers | Cameras, memory, sensors, and speech |
+| Full | all six servers | Cameras, memory, sensors, local inference, and speech |
 | Custom | explicit selection | User-controlled footprint and memory backend |
 
 ## Development

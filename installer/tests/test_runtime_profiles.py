@@ -35,6 +35,7 @@ def test_profiles_make_the_weight_tradeoff_explicit() -> None:
         "usb-webcam",
         "memory",
         "system-temperature",
+        "local-inference",
         "elevenlabs-t2s",
     )
 
@@ -62,6 +63,7 @@ def test_profile_flags_and_inference_share_the_component_registry() -> None:
         "usb_camera_enabled": False,
         "memory_enabled": True,
         "system_temperature_enabled": True,
+        "local_inference_enabled": False,
         "elevenlabs_enabled": False,
     }
     assert infer_runtime_profile(flags) is RuntimeProfile.LITE
@@ -83,10 +85,13 @@ def test_runtime_config_reads_wizard_fields_in_one_place() -> None:
         "memory_enabled": True,
         "memory_backend": "SQLite FTS (lightweight)",
         "system_temperature_enabled": True,
+        "local_inference_enabled": False,
         "elevenlabs_enabled": False,
         "tapo_host": " 192.0.2.10 ",
         "tapo_username": " camera-user ",
         "tapo_password": " camera-password ",
+        "local_inference_backend": "LM Studio (127.0.0.1:1234)",
+        "local_inference_model": " local-jp ",
     }
 
     assert runtime_config_from_fields(fields.get) == {
@@ -96,6 +101,8 @@ def test_runtime_config_reads_wizard_fields_in_one_place() -> None:
         "tapo_host": "192.0.2.10",
         "tapo_username": "camera-user",
         "tapo_password": "camera-password",
+        "local_inference_backend": "lmstudio",
+        "local_inference_model": "local-jp",
     }
     assert required_host_dependencies({"runtime_profile": "full"}) == (
         "ffmpeg",
@@ -154,6 +161,37 @@ def test_full_profile_builds_every_mcp_server_without_collecting_api_keys() -> N
         "GO2RTC_STREAM": "tapo_cam",
         "ELEVENLABS_PLAYBACK": "none",
     }
+    assert config["mcpServers"]["local-inference"]["env"] == {
+        "SANPOLOID_LOCAL_LLM_BASE_URL": "http://127.0.0.1:1234/v1"
+    }
+
+
+def test_local_inference_backend_projects_only_fixed_loopback_endpoints() -> None:
+    lm_studio = build_mcp_config(
+        Path("/repo"),
+        {
+            "runtime_profile": "custom",
+            "local_inference_enabled": True,
+            "local_inference_backend": "LM Studio (127.0.0.1:1234)",
+            "local_inference_model": "local-jp",
+        },
+    )["mcpServers"]["local-inference"]
+    llama_cpp = build_mcp_config(
+        Path("/repo"),
+        {
+            "runtime_profile": "custom",
+            "local_inference_enabled": True,
+            "local_inference_backend": "llama.cpp (127.0.0.1:8080)",
+        },
+    )["mcpServers"]["local-inference"]
+
+    assert lm_studio["env"] == {
+        "SANPOLOID_LOCAL_LLM_BASE_URL": "http://127.0.0.1:1234/v1",
+        "SANPOLOID_LOCAL_LLM_MODEL": "local-jp",
+    }
+    assert llama_cpp["env"] == {
+        "SANPOLOID_LOCAL_LLM_BASE_URL": "http://127.0.0.1:8080/v1"
+    }
 
 
 def test_action_gate_always_covers_every_managed_component() -> None:
@@ -161,7 +199,8 @@ def test_action_gate_always_covers_every_managed_component() -> None:
 
     assert matcher == (
         "mcp__wifi-cam__.*|mcp__usb-webcam__.*|mcp__memory__.*|"
-        "mcp__system-temperature__.*|mcp__elevenlabs-t2s__.*"
+        "mcp__system-temperature__.*|mcp__local-inference__.*|"
+        "mcp__elevenlabs-t2s__.*"
     )
 
 

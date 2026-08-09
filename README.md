@@ -21,6 +21,7 @@
 | [elevenlabs-t2s-mcp](./elevenlabs-t2s-mcp/) | 声 | ElevenLabs で音声合成(Audio Tags対応) | ElevenLabs API + go2rtc |
 | [memory-mcp](./memory-mcp/) | 脳 | 長期記憶(SQLite FTS / セマンティック検索) | SQLite / ChromaDB |
 | [system-temperature-mcp](./system-temperature-mcp/) | 体温感覚 | システム温度監視 | Linux sensors |
+| [local-inference-mcp](./local-inference-mcp/) | 内なる声 | ローカルLLMへの限定テキスト委譲 | LM Studio / llama.cpp |
 | [action-policy](./action-policy/) | 行動ゲート | 全 embodied tool の実行前分類・確認 | Claude Code PreToolUse |
 
 ## アーキテクチャ
@@ -59,6 +60,10 @@ Project settings が有効な Claude Code session では、`.claude/settings.jso
 Claude Code の確認 UI へ送ります。既知の read-only、local bookkeeping、local ephemeral
 tool は自動許可されます。
 
+`local-inference-mcp`はClaude Codeを置き換えるhostではなく、重い判断を行うhostから
+短い日本語生成・要約・分類を同じPCの小型modelへ委譲するhelperです。local modelはこの
+helper経由で他のMCP toolを呼べないため、身体操作とaction-policyの責務は変わりません。
+
 ## 必要なもの
 
 ### ハードウェア
@@ -83,7 +88,7 @@ tool は自動許可されます。
 |---|---|---|
 | Lite | memory(SQLite FTS), system-temperature | カメラ、音声、Vector DBなしの軽量記憶構成 |
 | Core | wifi-cam, memory, system-temperature | 推奨の基本構成 |
-| Full | 全5 MCP | USBカメラとElevenLabs音声を含む全構成 |
+| Full | 全6 MCP | ローカル推論、USBカメラ、ElevenLabs音声を含む全構成 |
 | Custom | 手動選択 | 必要なmoduleだけを導入 |
 
 Profileを切り替えると、installerは以前登録したSanpoloid MCPだけを安全に置換します。
@@ -215,6 +220,23 @@ uv sync
 
 > **注意**: WSL2 環境では温度センサーにアクセスできないため動作しません。
 
+#### local-inference-mcp(内なる声)
+
+```powershell
+cd local-inference-mcp
+uv sync
+
+# LM Studioの例。server/modelの起動は明示的に別管理する
+lms server start --bind 127.0.0.1 --port 1234
+lms load <model-key> --identifier sanpoloid-local --context-length 4096
+$env:SANPOLOID_LOCAL_LLM_MODEL = "sanpoloid-local"
+uv run local-inference-mcp
+```
+
+このMCPはLM Studioとllama.cppが共有するOpenAI-compatible endpointへ接続する。
+loopback以外のURL、OS proxy、HTTP redirectを拒否し、server起動やmodel取得を勝手に行わない。
+詳しい制限と環境変数は[local-inference-mcp README](./local-inference-mcp/)を参照。
+
 ### 3. Claude Code 設定
 
 カレントディレクトリの `.mcp.json` に MCP サーバーを登録:
@@ -345,6 +367,13 @@ Claude Code を起動すると、自然言語でカメラを操作できる:
 |--------|------|
 | `get_system_temperature` | システム温度を取得 |
 | `get_current_time` | 現在時刻を取得 |
+
+### local-inference-mcp
+
+| ツール | 説明 |
+|--------|------|
+| `get_local_inference_status` | loopback endpointとmodel一覧を確認 |
+| `ask_local_model` | boundedなテキスト作業をローカルLLMへ委譲 |
 
 ## 外に連れ出す(オプション)
 
