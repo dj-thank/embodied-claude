@@ -6,6 +6,16 @@ from PyQt6.QtWidgets import (
     QWizardPage,
 )
 
+from installer.runtime_profiles import enabled_server_ids, runtime_config_from_fields
+
+_SERVER_DESCRIPTIONS = {
+    "wifi-cam": "Eyes, neck, ears (Wi-Fi camera)",
+    "usb-webcam": "Eyes (USB webcam)",
+    "memory": "Long-term semantic memory (ChromaDB)",
+    "system-temperature": "Body temperature sense",
+    "elevenlabs-t2s": "Voice (ElevenLabs; API key supplied externally)",
+}
+
 
 class CompletePage(QWizardPage):
     """Installation complete page"""
@@ -25,10 +35,21 @@ class CompletePage(QWizardPage):
         layout.addWidget(success_label)
 
         # Next steps
-        next_steps = QTextBrowser()
-        next_steps.setOpenExternalLinks(True)
-        next_steps.setHtml(
-            """
+        self.next_steps = QTextBrowser()
+        self.next_steps.setOpenExternalLinks(True)
+        layout.addWidget(self.next_steps)
+
+        self.setLayout(layout)
+
+    def initializePage(self) -> None:
+        """Render exactly the MCP servers selected by the runtime profile."""
+        config = runtime_config_from_fields(self.field)
+        server_items = "".join(
+            f"<li><strong>{server_id}</strong> - {_SERVER_DESCRIPTIONS[server_id]}</li>"
+            for server_id in enabled_server_ids(config)
+        )
+        self.next_steps.setHtml(
+            f"""
             <h3>Next Steps</h3>
 
             <ol>
@@ -51,10 +72,7 @@ class CompletePage(QWizardPage):
             <h3>Installed MCP Servers</h3>
             <p>Your Claude Code now has access to:</p>
             <ul>
-                <li><strong>wifi-cam</strong> - Eyes, neck, ears (Wi-Fi camera, if selected)</li>
-                <li><strong>usb-webcam</strong> - Eyes (USB webcam, if selected)</li>
-                <li><strong>memory</strong> - Long-term memory (ChromaDB)</li>
-                <li><strong>system-temperature</strong> - Body temperature sense</li>
+                {server_items}
             </ul>
 
             <h3>Installed Action Gate</h3>
@@ -83,6 +101,3 @@ class CompletePage(QWizardPage):
             </p>
             """
         )
-        layout.addWidget(next_steps)
-
-        self.setLayout(layout)

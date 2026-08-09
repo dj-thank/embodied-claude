@@ -75,6 +75,21 @@ tool は自動許可されます。
 
 ## セットアップ
 
+### Runtime Profile（GUI installer）
+
+`installer` は、必要な身体性とマシンの余力に合わせて導入範囲を選べます。
+
+| Profile | MCP | 用途 |
+|---|---|---|
+| Lite | system-temperature | カメラ、音声、Vector DBなしの最小構成 |
+| Core | wifi-cam, memory, system-temperature | 推奨の基本構成 |
+| Full | 全5 MCP | USBカメラとElevenLabs音声を含む全構成 |
+| Custom | 手動選択 | 必要なmoduleだけを導入 |
+
+Profileを切り替えると、installerは以前登録したSanpoloid MCPだけを安全に置換します。
+ユーザーが別途登録したMCPは保持されます。Liteでは不要な`ffmpeg`確認も行いません。
+API keyはinstallerへ保存せず、各serverの起動環境から渡してください。
+
 ### 1. リポジトリのクローン
 
 ```bash

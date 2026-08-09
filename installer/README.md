@@ -5,6 +5,8 @@ GUI installer for Embodied Claude MCP servers.
 ## Features
 
 - ✅ Dependency checking (ffmpeg, uv, OpenCV)
+- ✅ Lite / Core / Full / Custom runtime profiles
+- ✅ Profile-aware dependency checks and stale MCP removal
 - ✅ Wi-Fi PTZ camera configuration (Tapo)
 - ✅ USB webcam detection
 - ✅ Automatic MCP configuration (~/.claude.json)
@@ -17,6 +19,18 @@ The installer syncs `action-policy` before exposing MCP servers globally. It the
 `PreToolUse` hook for the five Sanpoloid MCP server prefixes while preserving existing user hooks.
 Re-running the installer replaces only its own prior handler. Local user hooks are not loaded by
 Claude Code cloud sessions, and an administrator can restrict user-managed hooks.
+
+Runtime profiles are resolved by `installer.runtime_profiles`, which is the source of truth for
+component IDs, project directories, launch commands, host requirements, and preset membership.
+Switching profiles removes only previously managed Sanpoloid entries from `~/.claude.json`; other
+user-owned MCP servers remain untouched. API keys are not collected by the installer.
+
+| Profile | Enabled MCP servers | Intent |
+|---|---|---|
+| Lite | system-temperature | Minimal packages and no media tooling |
+| Core | wifi-cam, memory, system-temperature | Recommended embodied baseline |
+| Full | all five servers | Cameras, memory, sensors, and speech |
+| Custom | explicit selection | User-controlled footprint |
 
 ## Development
 
@@ -97,8 +111,10 @@ uv run pyinstaller embodied-claude-installer.spec
 
 ```
 installer/
+├── pyinstaller_entrypoint.py # Absolute-import bundle entry point
 ├── src/installer/
 │   ├── main.py              # Entry point
+│   ├── runtime_profiles.py  # Component registry and profile projections
 │   └── pages/
 │       ├── welcome.py       # Welcome page
 │       ├── dependencies.py  # Dependency check

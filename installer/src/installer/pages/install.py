@@ -15,10 +15,14 @@ from PyQt6.QtWidgets import (
     QWizardPage,
 )
 
-_ACTION_GATE_MATCHER = (
-    "mcp__wifi-cam__.*|mcp__usb-webcam__.*|mcp__memory__.*|"
-    "mcp__system-temperature__.*|mcp__elevenlabs-t2s__.*"
+from installer.runtime_profiles import (
+    action_gate_matcher,
+    build_mcp_config,
+    dependency_projects,
+    managed_server_ids,
+    runtime_config_from_fields,
 )
+
 _ACTION_GATE_STATUS = "Checking Sanpoloid action policy"
 
 
@@ -94,17 +98,7 @@ class InstallationWorker(QThread):
 
     def _dependency_projects(self, repo_path: Path) -> list[tuple[str, Path]]:
         """Return projects that must be synced before configuration is exposed."""
-        projects = [("action-policy", repo_path / "action-policy")]
-        if self.config.get("wifi_camera_enabled"):
-            projects.append(("wifi-cam-mcp", repo_path / "wifi-cam-mcp"))
-        if self.config.get("usb_camera_enabled"):
-            projects.append(("usb-webcam-mcp", repo_path / "usb-webcam-mcp"))
-        if self.config.get("memory_enabled"):
-            projects.append(("memory-mcp", repo_path / "memory-mcp"))
-        projects.append(
-            ("system-temperature-mcp", repo_path / "system-temperature-mcp")
-        )
-        return projects
+        return dependency_projects(repo_path, self.config)
 
     @staticmethod
     def _action_gate_executable(repo_path: Path) -> Path:
@@ -214,6 +208,7 @@ class InstallationWorker(QThread):
         if not isinstance(pre_tool_use, list):
             raise ValueError("Claude user settings PreToolUse must be a JSON array")
 
+        matcher = action_gate_matcher()
         retained = []
         for group in pre_tool_use:
             if not isinstance(group, dict):
@@ -221,7 +216,7 @@ class InstallationWorker(QThread):
                 continue
             handlers = group.get("hooks")
             if not isinstance(handlers, list):
-                if group.get("matcher") == _ACTION_GATE_MATCHER:
+                if group.get("matcher") == matcher:
                     raise ValueError(
                         "Sanpoloid PreToolUse hook group handlers must be a JSON array"
                     )
@@ -240,7 +235,7 @@ class InstallationWorker(QThread):
                 retained.append(retained_group)
         retained.append(
             {
-                "matcher": _ACTION_GATE_MATCHER,
+                "matcher": matcher,
                 "hooks": [self._action_gate_hook_handler(repo_path)],
             }
         )
@@ -282,68 +277,7 @@ class InstallationWorker(QThread):
 
     def _create_mcp_config(self, repo_path):
         """Create MCP server configuration"""
-        config = {"mcpServers": {}}
-
-        # Wi-Fi camera
-        if self.config.get("wifi_camera_enabled"):
-            config["mcpServers"]["wifi-cam"] = {
-                "type": "stdio",
-                "command": "uv",
-                "args": [
-                    "run",
-                    "--directory",
-                    str(repo_path / "wifi-cam-mcp"),
-                    "wifi-cam-mcp",
-                ],
-                "env": {
-                    "TAPO_CAMERA_HOST": self.config.get("tapo_host", ""),
-                    "TAPO_USERNAME": self.config.get("tapo_username", ""),
-                    "TAPO_PASSWORD": self.config.get("tapo_password", ""),
-                },
-            }
-
-        # USB camera
-        if self.config.get("usb_camera_enabled"):
-            config["mcpServers"]["usb-webcam"] = {
-                "type": "stdio",
-                "command": "uv",
-                "args": [
-                    "run",
-                    "--directory",
-                    str(repo_path / "usb-webcam-mcp"),
-                    "usb-webcam-mcp",
-                ],
-                "env": {}
-            }
-
-        # Memory
-        if self.config.get("memory_enabled"):
-            config["mcpServers"]["memory"] = {
-                "type": "stdio",
-                "command": "uv",
-                "args": [
-                    "run",
-                    "--directory",
-                    str(repo_path / "memory-mcp"),
-                    "memory-mcp",
-                ],
-                "env": {}
-            }
-
-        # System temperature
-        config["mcpServers"]["system-temperature"] = {
-            "type": "stdio",
-            "command": "uv",
-            "args": [
-                "run",
-                "--directory",
-                str(repo_path / "system-temperature-mcp"),
-                "system-temperature-mcp",
-            ],
-            "env": {}
-        }
-
-        return config
+        return build_mcp_config(repo_path, self.config)
 
     def _update_claude_settings(self, settings_path, mcp_config):
         """Update Claude Code .claude.json configuration"""
@@ -359,6 +293,11 @@ class InstallationWorker(QThread):
         if "mcpServers" not in existing:
             existing["mcpServers"] = {}
 
+        if not isinstance(existing["mcpServers"], dict):
+            raise ValueError("Claude MCP settings must be a JSON object")
+
+        for server_id in managed_server_ids():
+            existing["mcpServers"].pop(server_id, None)
         existing["mcpServers"].update(mcp_config["mcpServers"])
 
         self._write_json_atomic(settings_path, existing)
@@ -423,14 +362,7 @@ class InstallationPage(QWizardPage):
     def initializePage(self):
         """Start installation when page is shown"""
         # Gather configuration from previous pages
-        config = {
-            "wifi_camera_enabled": self.field("wifi_camera_enabled"),
-            "tapo_host": self.field("tapo_host"),
-            "tapo_username": self.field("tapo_username"),
-            "tapo_password": self.field("tapo_password"),
-            "usb_camera_enabled": self.field("usb_camera_enabled"),
-            "memory_enabled": self.field("memory_enabled"),
-        }
+        config = runtime_config_from_fields(self.field)
 
         # Start installation
         self.progress_label.setText("Installing...")

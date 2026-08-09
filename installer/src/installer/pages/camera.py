@@ -2,6 +2,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QGroupBox,
     QLabel,
@@ -9,9 +10,17 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
     QWizardPage,
+)
+
+from installer.runtime_profiles import (
+    PROFILE_DESCRIPTIONS,
+    RuntimeProfile,
+    infer_runtime_profile,
+    profile_component_flags,
 )
 
 
@@ -20,10 +29,25 @@ class CameraSelectionPage(QWizardPage):
 
     def __init__(self):
         super().__init__()
-        self.setTitle("Camera Selection")
-        self.setSubTitle("Select cameras for Embodied Claude")
+        self.setTitle("Runtime Profile")
+        self.setSubTitle("Choose a lightweight preset, then customize its MCP modules")
 
-        layout = QVBoxLayout()
+        content = QWidget()
+        content.setObjectName("runtimeProfileContent")
+        layout = QVBoxLayout(content)
+
+        profile_group = QGroupBox("Runtime footprint")
+        profile_layout = QVBoxLayout()
+        self.runtime_profile = QComboBox()
+        self.runtime_profile.addItems(["Lite", "Core", "Full", "Custom"])
+        self.runtime_profile.setCurrentText("Core")
+        profile_layout.addWidget(self.runtime_profile)
+        self.profile_description = QLabel()
+        self.profile_description.setWordWrap(True)
+        self.profile_description.setStyleSheet("QLabel { color: #94a3b8; }")
+        profile_layout.addWidget(self.profile_description)
+        profile_group.setLayout(profile_layout)
+        layout.addWidget(profile_group)
 
         # Wi-Fi Camera (Tapo) section
         wifi_group = QGroupBox("Wi-Fi PTZ Camera (Recommended)")
@@ -63,7 +87,7 @@ class CameraSelectionPage(QWizardPage):
             "(Camera Settings → Advanced → Camera Account)"
         )
         tapo_note.setWordWrap(True)
-        tapo_note.setStyleSheet("QLabel { color: #666; margin-top: 5px; }")
+        tapo_note.setStyleSheet("QLabel { color: #94a3b8; margin-top: 5px; }")
         wifi_layout.addWidget(tapo_note)
 
         wifi_group.setLayout(wifi_layout)
@@ -99,22 +123,117 @@ class CameraSelectionPage(QWizardPage):
         memory_note = QLabel(
             "💡 Memories will be stored in ~/.claude/memories/"
         )
-        memory_note.setStyleSheet("QLabel { color: #666; }")
+        memory_note.setStyleSheet("QLabel { color: #94a3b8; }")
         memory_layout.addWidget(memory_note)
 
         memory_group.setLayout(memory_layout)
         layout.addWidget(memory_group)
 
+        component_group = QGroupBox("Additional body modules")
+        component_layout = QVBoxLayout()
+
+        self.use_system_temperature = QCheckBox(
+            "Enable system temperature sense (lightweight)"
+        )
+        component_layout.addWidget(self.use_system_temperature)
+
+        self.use_elevenlabs = QCheckBox("Enable ElevenLabs speech output")
+        component_layout.addWidget(self.use_elevenlabs)
+        elevenlabs_note = QLabel(
+            "🔑 The API key is not collected here; provide ELEVENLABS_API_KEY "
+            "in the launch environment."
+        )
+        elevenlabs_note.setWordWrap(True)
+        elevenlabs_note.setStyleSheet("QLabel { color: #94a3b8; }")
+        component_layout.addWidget(elevenlabs_note)
+
+        component_group.setLayout(component_layout)
+        layout.addWidget(component_group)
+
         layout.addStretch()
-        self.setLayout(layout)
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(content)
+        scroll_area.setStyleSheet(
+            "QScrollArea { border: 0; background: #0f172a; }"
+            "QWidget#runtimeProfileContent { background: #0f172a; }"
+        )
+        page_layout = QVBoxLayout()
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.addWidget(scroll_area)
+        self.setLayout(page_layout)
 
         # Register fields for later access
         self.registerField("wifi_camera_enabled", self.use_wifi_camera)
+        self.registerField(
+            "runtime_profile",
+            self.runtime_profile,
+            "currentText",
+            self.runtime_profile.currentTextChanged,
+        )
         self.registerField("tapo_host", self.tapo_host)
         self.registerField("tapo_username", self.tapo_username)
         self.registerField("tapo_password", self.tapo_password)
         self.registerField("usb_camera_enabled", self.use_usb_camera)
         self.registerField("memory_enabled", self.use_memory)
+        self.registerField(
+            "system_temperature_enabled", self.use_system_temperature
+        )
+        self.registerField("elevenlabs_enabled", self.use_elevenlabs)
+
+        self._updating_profile = False
+        self.runtime_profile.currentTextChanged.connect(self._apply_profile)
+        for checkbox in (
+            self.use_wifi_camera,
+            self.use_usb_camera,
+            self.use_memory,
+            self.use_system_temperature,
+            self.use_elevenlabs,
+        ):
+            checkbox.stateChanged.connect(self._on_components_changed)
+        self._apply_profile("Core")
+
+    def _apply_profile(self, profile_name: str) -> None:
+        """Apply a named footprint without fighting later manual choices."""
+        profile = RuntimeProfile(profile_name.lower())
+        self.profile_description.setText(PROFILE_DESCRIPTIONS[profile])
+        if profile is RuntimeProfile.CUSTOM:
+            return
+        self._updating_profile = True
+        try:
+            for flag, checked in profile_component_flags(profile).items():
+                self._component_widgets()[flag].setChecked(checked)
+        finally:
+            self._updating_profile = False
+        self.completeChanged.emit()
+
+    def _on_components_changed(self, _state: int) -> None:
+        """Keep the displayed preset honest after a manual checkbox change."""
+        if self._updating_profile:
+            return
+        config = {
+            flag: checkbox.isChecked()
+            for flag, checkbox in self._component_widgets().items()
+        }
+        profile = infer_runtime_profile(config)
+        profile_name = profile.value.title()
+        self.runtime_profile.blockSignals(True)
+        try:
+            self.runtime_profile.setCurrentText(profile_name)
+            self.profile_description.setText(PROFILE_DESCRIPTIONS[profile])
+        finally:
+            self.runtime_profile.blockSignals(False)
+        self.completeChanged.emit()
+
+    def _component_widgets(self) -> dict[str, QCheckBox]:
+        """Bind domain selection flags to their visible controls."""
+        return {
+            "wifi_camera_enabled": self.use_wifi_camera,
+            "usb_camera_enabled": self.use_usb_camera,
+            "memory_enabled": self.use_memory,
+            "system_temperature_enabled": self.use_system_temperature,
+            "elevenlabs_enabled": self.use_elevenlabs,
+        }
 
     def _on_wifi_camera_changed(self, state):
         """Enable/disable WiFi camera form"""
@@ -125,8 +244,6 @@ class CameraSelectionPage(QWizardPage):
         """Enable/disable USB camera list"""
         enabled = state == Qt.CheckState.Checked.value
         self.usb_camera_list.setEnabled(enabled)
-        if enabled:
-            self._scan_usb_cameras()
         self.completeChanged.emit()
 
     def _on_camera_config_changed(self, _text):
@@ -172,9 +289,13 @@ class CameraSelectionPage(QWizardPage):
         ):
             return False
 
-        # Memory and system-temperature can be useful without a camera.
-        return (
-            self.use_wifi_camera.isChecked()
-            or self.use_usb_camera.isChecked()
-            or self.use_memory.isChecked()
+        return any(
+            checkbox.isChecked()
+            for checkbox in (
+                self.use_wifi_camera,
+                self.use_usb_camera,
+                self.use_memory,
+                self.use_system_temperature,
+                self.use_elevenlabs,
+            )
         )

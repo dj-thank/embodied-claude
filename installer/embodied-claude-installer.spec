@@ -3,7 +3,7 @@
 block_cipher = None
 
 a = Analysis(
-    ['src/installer/main.py'],
+    ['pyinstaller_entrypoint.py'],
     pathex=[],
     binaries=[],
     datas=[],

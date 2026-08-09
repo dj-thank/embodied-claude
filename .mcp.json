@@ -1,26 +1,35 @@
 {
   "mcpServers": {
     "usb-webcam": {
+      "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "usb-webcam-mcp", "usb-webcam-mcp"]
+      "args": ["run", "--directory", "usb-webcam-mcp", "usb-webcam-mcp"],
+      "env": {}
     },
     "wifi-cam": {
+      "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "wifi-cam-mcp", "wifi-cam-mcp"]
+      "args": ["run", "--directory", "wifi-cam-mcp", "wifi-cam-mcp"],
+      "env": {}
     },
     "memory": {
+      "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "memory-mcp", "memory-mcp"]
+      "args": ["run", "--directory", "memory-mcp", "memory-mcp"],
+      "env": {}
     },
     "system-temperature": {
+      "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "system-temperature-mcp", "system-temperature-mcp"]
+      "args": ["run", "--directory", "system-temperature-mcp", "system-temperature-mcp"],
+      "env": {}
     },
     "elevenlabs-t2s": {
+      "type": "stdio",
       "command": "uv",
       "args": ["run", "--directory", "elevenlabs-t2s-mcp", "elevenlabs-t2s"],
       "env": {
-        "GO2RTC_URL": "http://localhost:1984",
+        "GO2RTC_URL": "http://127.0.0.1:1984",
         "GO2RTC_STREAM": "tapo_cam",
         "ELEVENLABS_PLAYBACK": "none"
       }

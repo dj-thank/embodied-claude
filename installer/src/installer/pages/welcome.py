@@ -12,9 +12,9 @@ class WelcomePage(QWizardPage):
 
     def __init__(self):
         super().__init__()
-        self.setTitle("Welcome to Embodied Claude")
+        self.setTitle("Welcome to Sanpoloid")
         self.setSubTitle(
-            "Give Claude physical senses: eyes, ears, and long-term memory"
+            "Choose the body you need today — from Lite sensors to the full stack"
         )
 
         layout = QVBoxLayout()
@@ -25,7 +25,7 @@ class WelcomePage(QWizardPage):
         description.setMaximumHeight(400)
         description.setHtml(
             """
-            <h2>AIに身体を与えるプロジェクト</h2>
+            <h2>sanpo-loid — AIに身体を与えるプロジェクト</h2>
             <p>
                 Embodied Claude は、安価なハードウェア(約4,000円)で Claude に
                 「目」「首」「耳」「脳(長期記憶)」を与える MCP サーバー群です。
@@ -38,12 +38,12 @@ class WelcomePage(QWizardPage):
                 本質(見る・動かす)だけ抽出したシンプルさが特徴です。
             </blockquote>
 
-            <h3>このインストーラでセットアップされるもの</h3>
+            <h3>実行プロファイル</h3>
             <ul>
-                <li><strong>目(Eye)</strong>: USB/Wi-Fi カメラで視覚を獲得</li>
-                <li><strong>首(Neck)</strong>: PTZ カメラで見たい方向を向ける</li>
-                <li><strong>耳(Ear)</strong>: マイクで音声を聞き取る(Whisper)</li>
-                <li><strong>脳(Brain)</strong>: 長期記憶(ChromaDB)</li>
+                <li><strong>Lite</strong>: 体温感覚だけ。カメラやVector DBなし。</li>
+                <li><strong>Core</strong>: Wi-Fiカメラ、長期記憶、体温感覚。</li>
+                <li><strong>Full</strong>: USBカメラとElevenLabsの声を含む全MCP。</li>
+                <li><strong>Custom</strong>: 必要な身体moduleだけを手動選択。</li>
             </ul>
 
             <h3>必要なハードウェア</h3>
@@ -67,7 +67,7 @@ class WelcomePage(QWizardPage):
             "既存の設定は上書きされませんが、バックアップを推奨します。"
         )
         note.setWordWrap(True)
-        note.setStyleSheet("QLabel { color: #666; margin-top: 10px; }")
+        note.setStyleSheet("QLabel { color: #94a3b8; margin-top: 10px; }")
         layout.addWidget(note)
 
         self.setLayout(layout)

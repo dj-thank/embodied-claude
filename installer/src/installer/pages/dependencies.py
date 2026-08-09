@@ -14,6 +14,11 @@ from PyQt6.QtWidgets import (
     QWizardPage,
 )
 
+from installer.runtime_profiles import (
+    required_host_dependencies,
+    runtime_config_from_fields,
+)
+
 
 class DependenciesPage(QWizardPage):
     """Check and install required dependencies"""
@@ -21,7 +26,7 @@ class DependenciesPage(QWizardPage):
     def __init__(self):
         super().__init__()
         self.setTitle("Dependencies Check")
-        self.setSubTitle("Checking required software (ffmpeg, Python 3.12+, uv)")
+        self.setSubTitle("Checking only the software required by this profile")
 
         layout = QVBoxLayout()
 
@@ -62,16 +67,18 @@ class DependenciesPage(QWizardPage):
         self.deps_list.clear()
         self.status_label.setText("Checking dependencies...")
 
-        results = {
-            "ffmpeg": self._check_ffmpeg(),
+        checks = {
             "Python": self._check_python(),
-            "OpenCV": self._check_opencv(),
             "uv": self._check_uv(),
         }
+        required = self._required_dependencies()
+        if "ffmpeg" in required:
+            checks = {"ffmpeg": self._check_ffmpeg(), **checks}
+        if self.field("usb_camera_enabled"):
+            checks["OpenCV"] = self._check_opencv()
+        results = checks
 
-        # Required dependencies (OpenCV is optional - only needed for USB cameras)
-        required = ["ffmpeg", "Python", "uv"]
-        optional = ["OpenCV"]
+        optional = {"OpenCV"}
 
         # Display results
         for name, (installed, version) in results.items():
@@ -107,6 +114,10 @@ class DependenciesPage(QWizardPage):
 
         # Update wizard buttons
         self.completeChanged.emit()
+
+    def _required_dependencies(self) -> tuple[str, ...]:
+        """Resolve host requirements from the profile page's selections."""
+        return required_host_dependencies(runtime_config_from_fields(self.field))
 
     def isComplete(self):
         """Page is complete only if all dependencies are satisfied"""
@@ -166,7 +177,7 @@ class DependenciesPage(QWizardPage):
         """Show installation instructions for missing dependencies"""
         html_parts = ["<h3>Installation Instructions</h3>"]
 
-        if not results["ffmpeg"][0]:
+        if "ffmpeg" in results and not results["ffmpeg"][0]:
             html_parts.append(
                 """
                 <h4>ffmpeg</h4>
@@ -178,7 +189,7 @@ class DependenciesPage(QWizardPage):
                 """
             )
 
-        if not results["OpenCV"][0]:
+        if "OpenCV" in results and not results["OpenCV"][0]:
             html_parts.append(
                 """
                 <h4>OpenCV (Optional - for USB cameras only)</h4>
