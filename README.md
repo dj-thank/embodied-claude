@@ -19,7 +19,7 @@
 | [usb-webcam-mcp](./usb-webcam-mcp/) | 目 | USB カメラから画像取得 | nuroum V11 等 |
 | [wifi-cam-mcp](./wifi-cam-mcp/) | 目・首・耳 | ONVIF PTZ カメラ制御 + 音声認識 | TP-Link Tapo C210/C220 等 |
 | [elevenlabs-t2s-mcp](./elevenlabs-t2s-mcp/) | 声 | ElevenLabs で音声合成(Audio Tags対応) | ElevenLabs API + go2rtc |
-| [memory-mcp](./memory-mcp/) | 脳 | 長期記憶(セマンティック検索) | ChromaDB |
+| [memory-mcp](./memory-mcp/) | 脳 | 長期記憶(SQLite FTS / セマンティック検索) | SQLite / ChromaDB |
 | [system-temperature-mcp](./system-temperature-mcp/) | 体温感覚 | システム温度監視 | Linux sensors |
 | [action-policy](./action-policy/) | 行動ゲート | 全 embodied tool の実行前分類・確認 | Claude Code PreToolUse |
 
@@ -48,7 +48,7 @@
        │                 │                 │                 │
        ▼                 ▼                 ▼                 ▼
 ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-│ USB Webcam  │   │ Tapo Camera │   │  ChromaDB   │   │Linux Sensors│
+│ USB Webcam  │   │ Tapo Camera │   │SQLite/Chroma│   │Linux Sensors│
 │ (nuroum V11)│   │  (C210等)   │   │  (Vector)   │   │(/sys/class) │
 └─────────────┘   └─────────────┘   └─────────────┘   └─────────────┘
 ```
@@ -81,13 +81,13 @@ tool は自動許可されます。
 
 | Profile | MCP | 用途 |
 |---|---|---|
-| Lite | system-temperature | カメラ、音声、Vector DBなしの最小構成 |
+| Lite | memory(SQLite FTS), system-temperature | カメラ、音声、Vector DBなしの軽量記憶構成 |
 | Core | wifi-cam, memory, system-temperature | 推奨の基本構成 |
 | Full | 全5 MCP | USBカメラとElevenLabs音声を含む全構成 |
 | Custom | 手動選択 | 必要なmoduleだけを導入 |
 
 Profileを切り替えると、installerは以前登録したSanpoloid MCPだけを安全に置換します。
-ユーザーが別途登録したMCPは保持されます。Liteでは不要な`ffmpeg`確認も行いません。
+ユーザーが別途登録したMCPは保持されます。Liteでは不要な`ffmpeg`確認やChroma依存導入も行いません。
 API keyはinstallerへ保存せず、各serverの起動環境から渡してください。
 
 ### 1. リポジトリのクローン
@@ -174,8 +174,14 @@ cp .env.example .env
 
 ```bash
 cd memory-mcp
+# SQLite FTS（軽量、既定のクリーンinstall）
 uv sync
+
+# ChromaDB（embeddingによるsemantic search）
+uv sync --extra chroma
 ```
+
+`MEMORY_BACKEND=sqlite|chroma|auto`で選択できます。backend間の既存記憶は自動移行されません。
 
 #### elevenlabs-t2s-mcp(声)
 

@@ -15,12 +15,14 @@ def temp_db_path(tmp_path: Path) -> str:
     return str(tmp_path / "test_chroma")
 
 
-@pytest.fixture
-def memory_config(temp_db_path: str) -> MemoryConfig:
-    """Create test memory config."""
+@pytest.fixture(params=("chroma", "sqlite"))
+def memory_config(temp_db_path: str, request: pytest.FixtureRequest) -> MemoryConfig:
+    """Exercise the shared store contract against both persistence backends."""
+    backend = str(request.param)
     return MemoryConfig(
-        db_path=temp_db_path,
+        db_path=f"{temp_db_path}_{backend}",
         collection_name="test_memories",
+        backend=backend,
     )
 
 

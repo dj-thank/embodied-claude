@@ -10,12 +10,15 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0",
-    "chromadb>=0.5.0",
     "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
+chroma = [
+    "chromadb>=0.5.0",
+]
 dev = [
+    "chromadb>=0.5.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.3.0",

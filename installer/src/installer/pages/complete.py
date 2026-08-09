@@ -6,12 +6,16 @@ from PyQt6.QtWidgets import (
     QWizardPage,
 )
 
-from installer.runtime_profiles import enabled_server_ids, runtime_config_from_fields
+from installer.runtime_profiles import (
+    enabled_server_ids,
+    resolve_memory_backend,
+    runtime_config_from_fields,
+)
 
 _SERVER_DESCRIPTIONS = {
     "wifi-cam": "Eyes, neck, ears (Wi-Fi camera)",
     "usb-webcam": "Eyes (USB webcam)",
-    "memory": "Long-term semantic memory (ChromaDB)",
+    "memory": "Long-term memory",
     "system-temperature": "Body temperature sense",
     "elevenlabs-t2s": "Voice (ElevenLabs; API key supplied externally)",
 }
@@ -44,8 +48,14 @@ class CompletePage(QWizardPage):
     def initializePage(self) -> None:
         """Render exactly the MCP servers selected by the runtime profile."""
         config = runtime_config_from_fields(self.field)
+        descriptions = dict(_SERVER_DESCRIPTIONS)
+        descriptions["memory"] = (
+            "Long-term memory (SQLite FTS, lightweight)"
+            if resolve_memory_backend(config) == "sqlite"
+            else "Long-term semantic memory (ChromaDB)"
+        )
         server_items = "".join(
-            f"<li><strong>{server_id}</strong> - {_SERVER_DESCRIPTIONS[server_id]}</li>"
+            f"<li><strong>{server_id}</strong> - {descriptions[server_id]}</li>"
             for server_id in enabled_server_ids(config)
         )
         self.next_steps.setHtml(

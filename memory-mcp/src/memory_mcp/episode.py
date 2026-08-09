@@ -1,15 +1,18 @@
 """Episode memory management."""
 
+from __future__ import annotations
+
 import asyncio
 import uuid
 from typing import TYPE_CHECKING
 
-import chromadb
-
 from .types import Episode
 
 if TYPE_CHECKING:
+    import chromadb
+
     from .memory import MemoryStore
+    from .sqlite_store import SQLiteCollection
 
 
 class EpisodeManager:
@@ -22,7 +25,7 @@ class EpisodeManager:
     def __init__(
         self,
         memory_store: "MemoryStore",
-        collection: chromadb.Collection,
+        collection: chromadb.Collection | "SQLiteCollection",
     ):
         """Initialize episode manager.
 
@@ -110,7 +113,7 @@ class EpisodeManager:
             importance=max(m.importance for m in memories),
         )
 
-        # ChromaDBに保存
+        # 選択中のstorage backendに保存
         await self._save_episode(episode)
 
         # 各記憶にepisode_idを設定
@@ -123,7 +126,7 @@ class EpisodeManager:
         return episode
 
     async def _save_episode(self, episode: Episode) -> None:
-        """エピソードをChromaDBに保存(内部用).
+        """エピソードを選択中のbackendに保存(内部用).
 
         Args:
             episode: 保存するエピソード
@@ -141,7 +144,7 @@ class EpisodeManager:
         query: str,
         n_results: int = 5,
     ) -> list[Episode]:
-        """エピソードを検索(サマリーでsemantic search).
+        """エピソードを検索(backendに応じたsummary relevance search).
 
         Args:
             query: 検索クエリ

@@ -8,7 +8,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel, QWizardPage
 
 from installer.main import EmbodiedClaudeInstaller
 from installer.pages.camera import CameraSelectionPage
@@ -45,15 +45,21 @@ def test_runtime_profile_selection_updates_visible_components(
 
     page.runtime_profile.setCurrentText("Lite")
     assert not page.use_wifi_camera.isChecked()
+    assert page.wifi_form.isHidden()
     assert not page.use_usb_camera.isChecked()
-    assert not page.use_memory.isChecked()
+    assert page.usb_camera_list.isHidden()
+    assert page.use_memory.isChecked()
+    assert page.memory_backend.currentText().startswith("SQLite")
     assert page.use_system_temperature.isChecked()
     assert not page.use_elevenlabs.isChecked()
 
     page.runtime_profile.setCurrentText("Full")
     assert page.use_wifi_camera.isChecked()
+    assert not page.wifi_form.isHidden()
     assert page.use_usb_camera.isChecked()
+    assert not page.usb_camera_list.isHidden()
     assert page.use_memory.isChecked()
+    assert page.memory_backend.currentText().startswith("Chroma")
     assert page.use_system_temperature.isChecked()
     assert page.use_elevenlabs.isChecked()
 
@@ -72,6 +78,19 @@ def test_profile_precedes_dependency_check_and_changes_requirements(
     profile_page.runtime_profile.setCurrentText("Lite")
     assert dependencies_page._required_dependencies() == ("Python", "uv")
     assert "#0f172a" in wizard.styleSheet()
+    wizard.show()
+    qapp.processEvents()
+    header_labels = []
+    for label in wizard.findChildren(QLabel):
+        parent = label.parentWidget()
+        while parent is not None and parent is not wizard:
+            if isinstance(parent, QWizardPage):
+                break
+            parent = parent.parentWidget()
+        else:
+            header_labels.append(label)
+    assert header_labels
+    assert all("#0f172a" in label.styleSheet() for label in header_labels)
 
 
 def test_completion_page_lists_only_selected_servers(qapp: QApplication) -> None:
@@ -85,7 +104,7 @@ def test_completion_page_lists_only_selected_servers(qapp: QApplication) -> None
     rendered = complete_page.next_steps.toPlainText()
 
     assert "system-temperature" in rendered
-    assert "memory" not in rendered
+    assert "memory" in rendered
     assert "wifi-cam" not in rendered
 
 
@@ -167,7 +186,11 @@ def test_update_claude_settings_replaces_managed_servers_for_profile_switch(
     )
 
     saved = json.loads(settings_path.read_text(encoding="utf-8"))
-    assert set(saved["mcpServers"]) == {"system-temperature", "user-owned"}
+    assert set(saved["mcpServers"]) == {
+        "memory",
+        "system-temperature",
+        "user-owned",
+    }
     assert saved["mcpServers"]["user-owned"]["command"] == "keep-me"
 
 
@@ -176,8 +199,9 @@ def test_dependency_projects_always_include_action_policy() -> None:
 
     projects = worker._dependency_projects(Path("/repo"))
 
-    assert projects[0] == ("action-policy", Path("/repo/action-policy"))
-    assert ("system-temperature-mcp", Path("/repo/system-temperature-mcp")) in projects
+    assert projects[0].name == "action-policy"
+    assert projects[0].path == Path("/repo/action-policy")
+    assert any(project.name == "system-temperature-mcp" for project in projects)
 
 
 def test_uv_sync_uses_committed_lockfile(
@@ -199,9 +223,9 @@ def test_uv_sync_uses_committed_lockfile(
 
     monkeypatch.setattr("installer.pages.install.subprocess.run", fake_run)
 
-    worker._run_uv_sync(tmp_path)
+    worker._run_uv_sync(tmp_path, extras=("chroma",))
 
-    assert observed["command"] == ["uv", "sync", "--locked"]
+    assert observed["command"] == ["uv", "sync", "--locked", "--extra", "chroma"]
 
 
 def test_user_action_gate_hook_merge_is_preserving_and_idempotent(

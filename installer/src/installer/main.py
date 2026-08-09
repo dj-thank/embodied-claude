@@ -4,7 +4,8 @@ GUI installer for setting up Embodied Claude MCP servers
 """
 import sys
 
-from PyQt6.QtWidgets import QApplication, QWizard
+from PyQt6.QtGui import QShowEvent
+from PyQt6.QtWidgets import QApplication, QLabel, QWizard, QWizardPage
 
 from .pages.camera import CameraSelectionPage
 from .pages.complete import CompletePage
@@ -16,7 +17,6 @@ _APP_STYLESHEET = """
 QWizard { background: #0f172a; color: #e2e8f0; }
 QWizardPage { background: #0f172a; }
 QLabel { color: #cbd5e1; }
-QLabel#qt_wizard_title, QLabel#qt_wizard_subtitle { color: #0f172a; }
 QGroupBox {
     color: #e2e8f0;
     font-weight: 600;
@@ -69,6 +69,21 @@ class EmbodiedClaudeInstaller(QWizard):
         self.addPage(DependenciesPage())
         self.addPage(InstallationPage())
         self.addPage(CompletePage())
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt override
+        super().showEvent(event)
+        self._style_header_labels()
+
+    def _style_header_labels(self) -> None:
+        """Keep Qt's white wizard header readable beside the dark page body."""
+        for label in self.findChildren(QLabel):
+            parent = label.parentWidget()
+            while parent is not None and parent is not self:
+                if isinstance(parent, QWizardPage):
+                    break
+                parent = parent.parentWidget()
+            else:
+                label.setStyleSheet("color: #0f172a;")
 
 
 def main():

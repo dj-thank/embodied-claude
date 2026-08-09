@@ -33,6 +33,15 @@ class MCPComponent:
     host_dependencies: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class DependencyProject:
+    """One uv project plus the optional features required by a profile."""
+
+    name: str
+    path: Path
+    extras: tuple[str, ...] = ()
+
+
 COMPONENTS = (
     MCPComponent(
         server_id="wifi-cam",
@@ -75,14 +84,22 @@ COMPONENTS = (
 
 _COMPONENT_BY_ID = {component.server_id: component for component in COMPONENTS}
 _PROFILE_COMPONENTS = {
-    RuntimeProfile.LITE: ("system-temperature",),
+    RuntimeProfile.LITE: ("memory", "system-temperature"),
     RuntimeProfile.CORE: ("wifi-cam", "memory", "system-temperature"),
     RuntimeProfile.FULL: tuple(component.server_id for component in COMPONENTS),
     RuntimeProfile.CUSTOM: (),
 }
+_PROFILE_MEMORY_BACKENDS = {
+    RuntimeProfile.LITE: "sqlite",
+    RuntimeProfile.CORE: "chroma",
+    RuntimeProfile.FULL: "chroma",
+    RuntimeProfile.CUSTOM: "sqlite",
+}
 
 PROFILE_DESCRIPTIONS = {
-    RuntimeProfile.LITE: "Smallest install: system temperature only; no camera or vector DB.",
+    RuntimeProfile.LITE: (
+        "Lightweight local memory (SQLite FTS) and temperature; no camera or vector DB."
+    ),
     RuntimeProfile.CORE: (
         "Recommended body: Wi-Fi camera, long-term memory, and temperature."
     ),
@@ -122,7 +139,12 @@ def infer_runtime_profile(config: Mapping[str, Any]) -> RuntimeProfile:
     """Identify a named profile when explicit component choices match one."""
     selected = enabled_server_ids({**config, "runtime_profile": "custom"})
     for profile in (RuntimeProfile.LITE, RuntimeProfile.CORE, RuntimeProfile.FULL):
-        if selected == profile_server_ids(profile):
+        backend_matches = (
+            "memory" not in selected
+            or "memory_backend" not in config
+            or resolve_memory_backend(config) == _PROFILE_MEMORY_BACKENDS[profile]
+        )
+        if selected == profile_server_ids(profile) and backend_matches:
             return profile
     return RuntimeProfile.CUSTOM
 
@@ -149,16 +171,33 @@ def managed_server_ids() -> tuple[str, ...]:
     return tuple(component.server_id for component in COMPONENTS)
 
 
+def resolve_memory_backend(config: Mapping[str, Any]) -> str:
+    """Resolve a UI label or explicit backend from the selected profile."""
+    raw_value = config.get("memory_backend")
+    if raw_value is None or not str(raw_value).strip():
+        profile = _profile_from_value(config.get("runtime_profile", RuntimeProfile.CORE))
+        return _PROFILE_MEMORY_BACKENDS[profile]
+    normalized = str(raw_value).strip().lower()
+    if normalized.startswith("sqlite"):
+        return "sqlite"
+    if normalized.startswith("chroma"):
+        return "chroma"
+    raise ValueError("memory_backend must select SQLite or Chroma")
+
+
 def dependency_projects(
     repo_path: Path,
     config: Mapping[str, Any],
-) -> list[tuple[str, Path]]:
+) -> list[DependencyProject]:
     """Return the policy host and enabled projects in installation order."""
-    projects = [("action-policy", repo_path / "action-policy")]
+    projects = [DependencyProject("action-policy", repo_path / "action-policy")]
     projects.extend(
-        (
-            _COMPONENT_BY_ID[server_id].project_directory,
-            repo_path / _COMPONENT_BY_ID[server_id].project_directory,
+        DependencyProject(
+            name=_COMPONENT_BY_ID[server_id].project_directory,
+            path=repo_path / _COMPONENT_BY_ID[server_id].project_directory,
+            extras=("chroma",)
+            if server_id == "memory" and resolve_memory_backend(config) == "chroma"
+            else (),
         )
         for server_id in enabled_server_ids(config)
     )
@@ -190,6 +229,9 @@ def runtime_config_from_fields(
         config[component.selection_flag] = bool(field_value(component.selection_flag))
     for credential_field in ("tapo_host", "tapo_username", "tapo_password"):
         config[credential_field] = str(field_value(credential_field) or "").strip()
+    config["memory_backend"] = resolve_memory_backend(
+        {**config, "memory_backend": field_value("memory_backend")}
+    )
     return config
 
 
@@ -212,15 +254,20 @@ def build_mcp_config(repo_path: Path, config: Mapping[str, Any]) -> dict[str, An
                     if value
                 }
             )
+        elif server_id == "memory":
+            environment["MEMORY_BACKEND"] = resolve_memory_backend(config)
+        arguments = [
+            "run",
+            "--directory",
+            str(repo_path / component.project_directory),
+        ]
+        if server_id == "memory" and environment["MEMORY_BACKEND"] == "chroma":
+            arguments.extend(("--extra", "chroma"))
+        arguments.append(component.executable)
         servers[server_id] = {
             "type": "stdio",
             "command": "uv",
-            "args": [
-                "run",
-                "--directory",
-                str(repo_path / component.project_directory),
-                component.executable,
-            ],
+            "args": arguments,
             "env": environment,
         }
     return {"mcpServers": servers}

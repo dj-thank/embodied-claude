@@ -12,9 +12,9 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 
 - 5 個の MCP サーバーと ElevenLabs 連携があり、合計 51 ツールを action policy が分類している。
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
-- Memory MCP は ChromaDB を使い、今回のクリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源である。
+- 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
 - 各サーバーは MCP SDK v1 系の JSON schema と dispatch を手書きしている。ツール定義、action policy、文書の重複は将来の drift を生みやすい。
-- 現在のテストは 7 パッケージ、計 256 件が PASS し、各 Ruff 検査も PASS した。これはローカル検証であり、実機、各ホスト、MCP Apps、配布物の E2E を証明しない。
+- Runtime Profile と Memory Lite 実装後のテストは 7 パッケージ、計 368 件が PASS し、各 Ruff 検査も PASS した。これはローカル検証であり、実機、各 MCP ホスト、MCP Apps、外部プロバイダーの E2E を証明しない。
 
 ## 一次情報から確認した変更点
 
@@ -43,7 +43,17 @@ MCPB は manifest とサーバーを `.mcpb` にまとめ、ホスト側のイ�
 最初の段階として Runtime Profile moduleを実装した。Lite / Core / Full / Customから、
 installer UI、dependency project、host dependency、MCP config、action gateを導出する。
 profile切替時はSanpoloid所有の旧server設定だけを除去し、ユーザー所有MCPを保持する。
-ローカル推論backendとMemory Lite adapterは、この時点では未実装である。
+ローカル推論backendは、この時点では未実装である。
+
+### Memory Lite 実装状況（2026-08-09）
+
+SQLite FTS collection adapterを追加し、既存のMemoryStore、episode、sensory、link、削除契約を
+ChromaとSQLiteの両方で検証した。クリーンなSQLite構成は32パッケージ、Chroma extra構成は
+96パッケージで、lock上64パッケージを削減する。Lite profileはSQLite memoryとtemperatureを
+選択し、Core / FullはChroma extraを明示的にinstallする。backend間のデータ移行は未実装であり、
+SQLiteの検索品質はembedding semantic searchと同等とは主張しない。
+Windows installer EXEは再ビルドし、ローカルで起動プロセスの生存まで確認したが、
+別PCへの配布・導入は未検証である。
 
 ## 一次情報
 

@@ -21,6 +21,7 @@ from installer.runtime_profiles import (
     RuntimeProfile,
     infer_runtime_profile,
     profile_component_flags,
+    resolve_memory_backend,
 )
 
 
@@ -82,13 +83,13 @@ class CameraSelectionPage(QWizardPage):
         wifi_layout.addWidget(self.wifi_form)
 
         # Note about Tapo setup
-        tapo_note = QLabel(
+        self.tapo_note = QLabel(
             "📝 Note: Create a local account on your Tapo camera first\n"
             "(Camera Settings → Advanced → Camera Account)"
         )
-        tapo_note.setWordWrap(True)
-        tapo_note.setStyleSheet("QLabel { color: #94a3b8; margin-top: 5px; }")
-        wifi_layout.addWidget(tapo_note)
+        self.tapo_note.setWordWrap(True)
+        self.tapo_note.setStyleSheet("QLabel { color: #94a3b8; margin-top: 5px; }")
+        wifi_layout.addWidget(self.tapo_note)
 
         wifi_group.setLayout(wifi_layout)
         layout.addWidget(wifi_group)
@@ -102,12 +103,13 @@ class CameraSelectionPage(QWizardPage):
         usb_layout.addWidget(self.use_usb_camera)
 
         self.usb_camera_list = QListWidget()
-        self.usb_camera_list.setEnabled(False)
+        self.usb_camera_list.hide()
         usb_layout.addWidget(self.usb_camera_list)
 
-        scan_button = QPushButton("Scan USB Cameras")
-        scan_button.clicked.connect(self._scan_usb_cameras)
-        usb_layout.addWidget(scan_button)
+        self.scan_button = QPushButton("Scan USB Cameras")
+        self.scan_button.clicked.connect(self._scan_usb_cameras)
+        self.scan_button.hide()
+        usb_layout.addWidget(self.scan_button)
 
         usb_group.setLayout(usb_layout)
         layout.addWidget(usb_group)
@@ -116,9 +118,17 @@ class CameraSelectionPage(QWizardPage):
         memory_group = QGroupBox("Long-term Memory (Brain)")
         memory_layout = QVBoxLayout()
 
-        self.use_memory = QCheckBox("Enable long-term memory (ChromaDB)")
+        self.use_memory = QCheckBox("Enable long-term memory")
         self.use_memory.setChecked(True)
+        self.use_memory.stateChanged.connect(self._on_memory_changed)
         memory_layout.addWidget(self.use_memory)
+
+        self.memory_backend = QComboBox()
+        self.memory_backend.addItems(
+            ["SQLite FTS (lightweight)", "Chroma (semantic search)"]
+        )
+        self.memory_backend.setCurrentText("Chroma (semantic search)")
+        memory_layout.addWidget(self.memory_backend)
 
         memory_note = QLabel(
             "💡 Memories will be stored in ~/.claude/memories/"
@@ -177,12 +187,19 @@ class CameraSelectionPage(QWizardPage):
         self.registerField("usb_camera_enabled", self.use_usb_camera)
         self.registerField("memory_enabled", self.use_memory)
         self.registerField(
+            "memory_backend",
+            self.memory_backend,
+            "currentText",
+            self.memory_backend.currentTextChanged,
+        )
+        self.registerField(
             "system_temperature_enabled", self.use_system_temperature
         )
         self.registerField("elevenlabs_enabled", self.use_elevenlabs)
 
         self._updating_profile = False
         self.runtime_profile.currentTextChanged.connect(self._apply_profile)
+        self.memory_backend.currentTextChanged.connect(self._on_components_changed)
         for checkbox in (
             self.use_wifi_camera,
             self.use_usb_camera,
@@ -203,6 +220,12 @@ class CameraSelectionPage(QWizardPage):
         try:
             for flag, checked in profile_component_flags(profile).items():
                 self._component_widgets()[flag].setChecked(checked)
+            backend = resolve_memory_backend({"runtime_profile": profile.value})
+            self.memory_backend.setCurrentText(
+                "SQLite FTS (lightweight)"
+                if backend == "sqlite"
+                else "Chroma (semantic search)"
+            )
         finally:
             self._updating_profile = False
         self.completeChanged.emit()
@@ -215,6 +238,7 @@ class CameraSelectionPage(QWizardPage):
             flag: checkbox.isChecked()
             for flag, checkbox in self._component_widgets().items()
         }
+        config["memory_backend"] = self.memory_backend.currentText()
         profile = infer_runtime_profile(config)
         profile_name = profile.value.title()
         self.runtime_profile.blockSignals(True)
@@ -223,6 +247,11 @@ class CameraSelectionPage(QWizardPage):
             self.profile_description.setText(PROFILE_DESCRIPTIONS[profile])
         finally:
             self.runtime_profile.blockSignals(False)
+        self.completeChanged.emit()
+
+    def _on_memory_changed(self, state: int) -> None:
+        """Only expose backend selection while long-term memory is enabled."""
+        self.memory_backend.setEnabled(state == Qt.CheckState.Checked.value)
         self.completeChanged.emit()
 
     def _component_widgets(self) -> dict[str, QCheckBox]:
@@ -236,14 +265,17 @@ class CameraSelectionPage(QWizardPage):
         }
 
     def _on_wifi_camera_changed(self, state):
-        """Enable/disable WiFi camera form"""
-        self.wifi_form.setEnabled(state == Qt.CheckState.Checked.value)
+        """Show Wi-Fi details only when that body module is selected."""
+        enabled = state == Qt.CheckState.Checked.value
+        self.wifi_form.setVisible(enabled)
+        self.tapo_note.setVisible(enabled)
         self.completeChanged.emit()
 
     def _on_usb_camera_changed(self, state):
         """Enable/disable USB camera list"""
         enabled = state == Qt.CheckState.Checked.value
-        self.usb_camera_list.setEnabled(enabled)
+        self.usb_camera_list.setVisible(enabled)
+        self.scan_button.setVisible(enabled)
         self.completeChanged.emit()
 
     def _on_camera_config_changed(self, _text):

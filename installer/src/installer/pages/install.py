@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from installer.runtime_profiles import (
+    DependencyProject,
     action_gate_matcher,
     build_mcp_config,
     dependency_projects,
@@ -56,11 +57,13 @@ class InstallationWorker(QThread):
             mcp_config = self._create_mcp_config(repo_path)
 
             # Install the policy host first, then each enabled MCP server.
-            for project_name, project_path in self._dependency_projects(repo_path):
-                if not project_path.exists():
-                    raise FileNotFoundError(f"{project_name} directory not found at {project_path}")
-                self.progress.emit(f"\n📦 Installing {project_name} dependencies...")
-                self._run_uv_sync(project_path)
+            for project in self._dependency_projects(repo_path):
+                if not project.path.exists():
+                    raise FileNotFoundError(
+                        f"{project.name} directory not found at {project.path}"
+                    )
+                self.progress.emit(f"\n📦 Installing {project.name} dependencies...")
+                self._run_uv_sync(project.path, project.extras)
 
             action_gate = self._action_gate_executable(repo_path)
             if not action_gate.is_file():
@@ -96,7 +99,7 @@ class InstallationWorker(QThread):
             self.progress.emit(f"\n❌ {error_msg}")
             self.finished.emit(False, error_msg)
 
-    def _dependency_projects(self, repo_path: Path) -> list[tuple[str, Path]]:
+    def _dependency_projects(self, repo_path: Path) -> list[DependencyProject]:
         """Return projects that must be synced before configuration is exposed."""
         return dependency_projects(repo_path, self.config)
 
@@ -302,7 +305,7 @@ class InstallationWorker(QThread):
 
         self._write_json_atomic(settings_path, existing)
 
-    def _run_uv_sync(self, directory):
+    def _run_uv_sync(self, directory: Path, extras: tuple[str, ...] = ()) -> None:
         """Run uv sync in a directory"""
         self.progress.emit(f"Running uv sync in: {directory}")
 
@@ -311,8 +314,11 @@ class InstallationWorker(QThread):
             raise FileNotFoundError(f"Directory does not exist: {directory}")
 
         try:
+            command = ["uv", "sync", "--locked"]
+            for extra in extras:
+                command.extend(("--extra", extra))
             result = subprocess.run(
-                ["uv", "sync", "--locked"],
+                command,
                 cwd=str(directory),  # Convert Path to string for Windows compatibility
                 capture_output=True,
                 text=True,

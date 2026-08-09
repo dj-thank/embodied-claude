@@ -165,7 +165,7 @@ class MemoryMCPServer:
                 Tool(
                     name="forget",
                     description=(
-                        "Delete one live Chroma memory record and its direct database "
+                        "Delete one live memory record from the selected backend and its direct "
                         "references using a fresh token from prepare_forget. This is "
                         "logical deletion, not verified storage-level secure erasure. "
                         "External sensory files are reported but are not deleted."
@@ -187,7 +187,10 @@ class MemoryMCPServer:
                 ),
                 Tool(
                     name="search_memories",
-                    description="Search through memories using semantic similarity. Find memories related to a topic or query.",
+                    description=(
+                        "Search memories using backend relevance: lightweight lexical/character "
+                        "matching with SQLite or embedding similarity with Chroma."
+                    ),
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -1462,7 +1465,7 @@ Date Range:
         config = MemoryConfig.from_env()
         self._memory_store = MemoryStore(config)
         await self._memory_store.connect()
-        logger.info(f"Connected to memory store at {config.db_path}")
+        logger.info("Connected to %s memory store at %s", config.backend, config.db_path)
 
         # Phase 4.2: Initialize episode manager
         episodes_collection = self._memory_store.get_episodes_collection()

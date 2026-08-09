@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import dataclass
+from importlib.util import find_spec
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -32,15 +33,26 @@ class MemoryConfig:
 
     db_path: str
     collection_name: str
+    backend: str = "chroma"
+
+    def __post_init__(self) -> None:
+        if self.backend not in {"chroma", "sqlite"}:
+            raise ValueError("MemoryConfig.backend must be 'chroma' or 'sqlite'")
 
     @classmethod
     def from_env(cls) -> "MemoryConfig":
         """Create config from environment variables."""
-        default_path = str(Path.home() / ".claude" / "memories" / "chroma")
+        backend = os.getenv("MEMORY_BACKEND", "auto").strip().lower()
+        if backend not in {"auto", "chroma", "sqlite"}:
+            raise ValueError("MEMORY_BACKEND must be 'auto', 'chroma', or 'sqlite'")
+        if backend == "auto":
+            backend = "chroma" if find_spec("chromadb") is not None else "sqlite"
+        default_path = str(Path.home() / ".claude" / "memories" / backend)
 
         return cls(
             db_path=os.getenv("MEMORY_DB_PATH", default_path),
             collection_name=os.getenv("MEMORY_COLLECTION_NAME", "claude_memories"),
+            backend=backend,
         )
 
 

@@ -24,6 +24,7 @@ class TestMemoryConnection:
             MemoryConfig(
                 db_path=":memory:",
                 collection_name="test_memories",
+                backend="chroma",
             )
         )
 

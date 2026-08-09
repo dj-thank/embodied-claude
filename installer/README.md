@@ -27,10 +27,10 @@ user-owned MCP servers remain untouched. API keys are not collected by the insta
 
 | Profile | Enabled MCP servers | Intent |
 |---|---|---|
-| Lite | system-temperature | Minimal packages and no media tooling |
+| Lite | memory (SQLite FTS), system-temperature | Lightweight memory with no vector DB or media tooling |
 | Core | wifi-cam, memory, system-temperature | Recommended embodied baseline |
 | Full | all five servers | Cameras, memory, sensors, and speech |
-| Custom | explicit selection | User-controlled footprint |
+| Custom | explicit selection | User-controlled footprint and memory backend |
 
 ## Development
 

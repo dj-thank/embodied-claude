@@ -296,7 +296,7 @@ class ScoredMemory:
     """スコアリング済み検索結果."""
 
     memory: Memory
-    semantic_distance: float  # ChromaDBからの生距離
+    semantic_distance: float  # 選択した検索backendからの生距離
     time_decay_factor: float  # 時間減衰係数 (0.0-1.0)
     emotion_boost: float  # 感情ブースト
     importance_boost: float  # 重要度ブースト

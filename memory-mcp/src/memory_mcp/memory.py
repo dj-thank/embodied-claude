@@ -1,4 +1,6 @@
-"""Memory operations with ChromaDB."""
+"""Long-term memory operations with selectable storage backends."""
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -7,9 +9,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any
-
-import chromadb
+from typing import TYPE_CHECKING, Any
 
 from .association import (
     AssociationDiagnostics,
@@ -24,6 +24,7 @@ from .predictive import (
     calculate_novelty_score,
     calculate_prediction_error,
 )
+from .sqlite_store import SQLiteClient, SQLiteCollection
 from .types import (
     CameraPosition,
     Memory,
@@ -42,6 +43,21 @@ from .workspace import (
     diversity_score,
     select_workspace_candidates,
 )
+
+if TYPE_CHECKING:
+    import chromadb
+
+
+def _load_chromadb() -> Any:
+    """Import the optional rich backend only when it is selected."""
+    try:
+        import chromadb
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            "The Chroma memory backend is not installed. "
+            "Run `uv sync --extra chroma` or set MEMORY_BACKEND=sqlite."
+        ) from error
+    return chromadb
 
 # 感情ブーストマップ: 強い感情は記憶に残りやすい
 EMOTION_BOOST_MAP: dict[str, float] = {
@@ -123,7 +139,7 @@ def calculate_final_score(
     最終スコアを計算。低いほど「良い」(想起されやすい)。
 
     Args:
-        semantic_distance: ChromaDBからの距離(0〜2くらい)
+        semantic_distance: 選択した検索backendからの距離
         time_decay: 時間減衰係数(0.0〜1.0)
         emotion_boost: 感情ブースト
         importance_boost: 重要度ブースト
@@ -266,15 +282,15 @@ def _memory_from_metadata(
 
 
 class MemoryStore:
-    """ChromaDB-backed memory storage (Phase 4: with working memory & episodes)."""
+    """Long-term memory storage backed by ChromaDB or lightweight SQLite FTS."""
 
     def __init__(self, config: MemoryConfig):
         self._config = config
         # PersistentClient and EphemeralClient share the same public methods,
         # but older Chroma releases do not expose one common public type alias.
         self._client: Any | None = None
-        self._collection: chromadb.Collection | None = None  # claude_memories
-        self._episodes_collection: chromadb.Collection | None = None  # Phase 4
+        self._collection: chromadb.Collection | SQLiteCollection | None = None
+        self._episodes_collection: chromadb.Collection | SQLiteCollection | None = None
         self._lock = asyncio.Lock()
         self._lifecycle_lock = asyncio.Lock()
         self._metadata_lock = asyncio.Lock()
@@ -285,14 +301,21 @@ class MemoryStore:
         self._consolidation_engine = ConsolidationEngine()
 
     async def connect(self) -> None:
-        """Initialize ChromaDB connection (Phase 4: with episodes collection)."""
+        """Initialize the selected backend and both logical collections."""
         async with self._lock:
             if self._client is None:
-                if self._config.db_path == ":memory:":
-                    self._client = await asyncio.to_thread(chromadb.EphemeralClient)
-                else:
+                if self._config.backend == "sqlite":
                     self._client = await asyncio.to_thread(
-                        chromadb.PersistentClient,
+                        SQLiteClient,
+                        self._config.db_path,
+                    )
+                elif self._config.db_path == ":memory:":
+                    chroma = _load_chromadb()
+                    self._client = await asyncio.to_thread(chroma.EphemeralClient)
+                else:
+                    chroma = _load_chromadb()
+                    self._client = await asyncio.to_thread(
+                        chroma.PersistentClient,
                         path=self._config.db_path,
                     )
                 # Phase 3: メインの記憶コレクション
@@ -309,13 +332,15 @@ class MemoryStore:
                 )
 
     async def disconnect(self) -> None:
-        """Close ChromaDB connection."""
+        """Close the configured storage backend."""
         async with self._lock:
+            if isinstance(self._client, SQLiteClient):
+                await asyncio.to_thread(self._client.close)
             self._client = None
             self._collection = None
             self._episodes_collection = None
 
-    def _ensure_connected(self) -> chromadb.Collection:
+    def _ensure_connected(self) -> chromadb.Collection | SQLiteCollection:
         """Ensure connected and return collection."""
         if self._collection is None:
             raise RuntimeError("MemoryStore not connected. Call connect() first.")
@@ -382,7 +407,7 @@ class MemoryStore:
         date_to: str | None = None,
         track_access: bool = True,
     ) -> list[MemorySearchResult]:
-        """Search memories by semantic similarity.
+        """Search memories by the selected backend's relevance distance.
 
         Args:
             query: Semantic search query.
@@ -832,7 +857,7 @@ class MemoryStore:
             async with self._metadata_lock:
                 collection = self._ensure_connected()
 
-                # Search and persistence are separate Chroma operations. Revalidate
+                # Search and persistence are separate backend operations. Revalidate
                 # candidates under the lifecycle lock so concurrent deletion cannot
                 # leave a dangling linked_id on the new record.
                 existing_ids: set[str] = set()
@@ -976,7 +1001,7 @@ class MemoryStore:
         """
         return self._working_memory
 
-    def get_episodes_collection(self) -> chromadb.Collection:
+    def get_episodes_collection(self) -> chromadb.Collection | SQLiteCollection:
         """エピソードコレクションへのアクセス.
 
         Returns:
@@ -1085,7 +1110,7 @@ class MemoryStore:
         where: dict[str, Any] = {"$and": where_conditions}
 
         # 全記憶を取得してフィルタ
-        # (ChromaDBのget()はwhereフィルタをサポート)
+        # Both collection adapters support the same where-filter subset.
         results = await asyncio.to_thread(
             collection.get,
             where=where,

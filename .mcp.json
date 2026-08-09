@@ -15,8 +15,10 @@
     "memory": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "memory-mcp", "memory-mcp"],
-      "env": {}
+      "args": ["run", "--directory", "memory-mcp", "--extra", "chroma", "memory-mcp"],
+      "env": {
+        "MEMORY_BACKEND": "chroma"
+      }
     },
     "system-temperature": {
       "type": "stdio",

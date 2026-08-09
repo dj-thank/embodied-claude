@@ -40,7 +40,7 @@ class WelcomePage(QWizardPage):
 
             <h3>実行プロファイル</h3>
             <ul>
-                <li><strong>Lite</strong>: 体温感覚だけ。カメラやVector DBなし。</li>
+                <li><strong>Lite</strong>: SQLite長期記憶と体温感覚。カメラやVector DBなし。</li>
                 <li><strong>Core</strong>: Wi-Fiカメラ、長期記憶、体温感覚。</li>
                 <li><strong>Full</strong>: USBカメラとElevenLabsの声を含む全MCP。</li>
                 <li><strong>Custom</strong>: 必要な身体moduleだけを手動選択。</li>

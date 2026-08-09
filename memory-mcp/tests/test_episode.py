@@ -8,12 +8,13 @@ from src.memory_mcp.episode import EpisodeManager
 from src.memory_mcp.memory import MemoryStore
 
 
-@pytest.fixture
-async def memory_store():
-    """Create a MemoryStore instance for testing."""
+@pytest.fixture(params=("chroma", "sqlite"))
+async def memory_store(request: pytest.FixtureRequest):
+    """Run episode behavior against both supported storage backends."""
     config = MemoryConfig(
         db_path=":memory:",  # In-memory for testing
         collection_name="test_memories",
+        backend=str(request.param),
     )
     store = MemoryStore(config)
     await store.connect()

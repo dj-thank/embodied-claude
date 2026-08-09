@@ -4,12 +4,17 @@ MCP server for AI long-term memory - Let AI remember across sessions!
 
 ## Overview
 
-This MCP server provides long-term memory capabilities for AI assistants using ChromaDB for vector storage. Memories are stored with semantic embeddings, allowing for intelligent recall based on context.
+This MCP server provides local long-term memory with two interchangeable backends:
+
+- **SQLite FTS**: lightweight, dependency-minimal lexical and character-aware retrieval.
+- **ChromaDB**: richer embedding-based semantic retrieval, installed as an optional extra.
+
+Both backends share the same MCP tools, metadata, episode, link, and guarded-deletion behavior.
 
 ## Features
 
 - **Semantic Memory Storage**: Save memories with emotion tags, importance levels, and categories
-- **Semantic Search**: Find relevant memories using natural language queries
+- **Selectable Retrieval**: Lightweight SQLite FTS or Chroma semantic search
 - **Context-based Recall**: Automatically recall memories relevant to the current conversation
 - **Persistent Storage**: Memories are stored locally and persist across sessions
 - **Guarded Record Deletion**: Optional two-step deletion with an expiring one-time token
@@ -22,8 +27,11 @@ This MCP server provides long-term memory capabilities for AI assistants using C
 git clone https://github.com/yourusername/memory-mcp.git
 cd memory-mcp
 
-# Install dependencies
+# Lightweight SQLite install (32 resolved packages in the 2026-08-09 lock)
 uv sync
+
+# Optional rich semantic backend
+uv sync --extra chroma
 
 # Run the server
 uv run memory-mcp
@@ -35,7 +43,8 @@ Set these environment variables or create a `.env` file:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MEMORY_DB_PATH` | `~/.claude/memories/chroma` | ChromaDB storage path |
+| `MEMORY_BACKEND` | `auto` | `sqlite`, `chroma`, or auto-detect installed Chroma |
+| `MEMORY_DB_PATH` | `~/.claude/memories/<backend>` | Backend-specific storage path |
 | `MEMORY_COLLECTION_NAME` | `claude_memories` | Collection name |
 | `MEMORY_DELETION_ENABLED` | `false` | Explicitly enable destructive memory-record deletion |
 | `MEMORY_DELETION_TOKEN_TTL_SECONDS` | `300` | One-time deletion token TTL, clamped to 30-3600 seconds |
@@ -57,7 +66,7 @@ Save a memory to long-term storage.
 
 ### search_memories
 
-Search memories by semantic similarity.
+Search memories by backend relevance: lexical/character matching on SQLite or semantic similarity on Chroma.
 
 ```json
 {
@@ -100,17 +109,24 @@ Deletion is disabled by default. After an operator enables it, call
 the same ID to `forget`. Tokens are one-time and a new preparation invalidates
 the previous one.
 
-`forget` removes the Chroma memory record, direct links/coactivation entries,
+`forget` removes the selected backend's memory record, direct links/coactivation entries,
 working-memory copies, and episode summaries containing that memory. It does
 **not** delete external image or audio files referenced by sensory metadata;
 those paths are returned for a separately governed media-deletion workflow.
 This is application-level logical deletion, not verified secure erasure from
-ChromaDB storage files, write-ahead logs, filesystem snapshots, or backups.
+database files, write-ahead logs, filesystem snapshots, or backups.
 
 The token limits accidental, mismatched, expired, and replayed calls; it is not
 proof of human authorization. Keep deletion disabled unless a trusted host UI
 or policy gate obtains explicit user confirmation. Mutation serialization is
-process-local and is not a cross-process ChromaDB transaction.
+process-local and is not a cross-process database transaction.
+
+## Backend selection and migration
+
+`MEMORY_BACKEND=auto` preserves Chroma when it is installed and otherwise uses SQLite.
+The installer sets the backend explicitly: Lite uses SQLite; Core and Full use Chroma.
+SQLite and Chroma use separate default directories. Existing memories are not copied between
+backends automatically, so changing the backend does not constitute a verified migration.
 
 ## Claude Code Integration
 
@@ -121,7 +137,8 @@ Add to your `~/.claude.json`:
   "mcpServers": {
     "memory": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/memory-mcp", "memory-mcp"]
+      "args": ["run", "--directory", "/path/to/memory-mcp", "memory-mcp"],
+      "env": {"MEMORY_BACKEND": "sqlite"}
     }
   }
 }
@@ -131,7 +148,7 @@ Add to your `~/.claude.json`:
 
 ```bash
 # Install dev dependencies
-uv sync --all-extras
+uv sync --extra dev
 
 # Run tests
 uv run --extra dev pytest

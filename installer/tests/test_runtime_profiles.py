@@ -6,6 +6,7 @@ from pathlib import Path
 
 from installer.runtime_profiles import (
     COMPONENTS,
+    DependencyProject,
     RuntimeProfile,
     action_gate_matcher,
     build_mcp_config,
@@ -20,7 +21,10 @@ from installer.runtime_profiles import (
 
 
 def test_profiles_make_the_weight_tradeoff_explicit() -> None:
-    assert profile_server_ids(RuntimeProfile.LITE) == ("system-temperature",)
+    assert profile_server_ids(RuntimeProfile.LITE) == (
+        "memory",
+        "system-temperature",
+    )
     assert profile_server_ids(RuntimeProfile.CORE) == (
         "wifi-cam",
         "memory",
@@ -56,12 +60,12 @@ def test_profile_flags_and_inference_share_the_component_registry() -> None:
     assert flags == {
         "wifi_camera_enabled": False,
         "usb_camera_enabled": False,
-        "memory_enabled": False,
+        "memory_enabled": True,
         "system_temperature_enabled": True,
         "elevenlabs_enabled": False,
     }
     assert infer_runtime_profile(flags) is RuntimeProfile.LITE
-    assert infer_runtime_profile({**flags, "memory_enabled": True}) is RuntimeProfile.CUSTOM
+    assert infer_runtime_profile({**flags, "memory_backend": "chroma"}) is RuntimeProfile.CUSTOM
 
 
 def test_lite_does_not_require_media_tooling() -> None:
@@ -76,7 +80,8 @@ def test_runtime_config_reads_wizard_fields_in_one_place() -> None:
         "runtime_profile": "Lite",
         "wifi_camera_enabled": False,
         "usb_camera_enabled": False,
-        "memory_enabled": False,
+        "memory_enabled": True,
+        "memory_backend": "SQLite FTS (lightweight)",
         "system_temperature_enabled": True,
         "elevenlabs_enabled": False,
         "tapo_host": " 192.0.2.10 ",
@@ -87,6 +92,7 @@ def test_runtime_config_reads_wizard_fields_in_one_place() -> None:
     assert runtime_config_from_fields(fields.get) == {
         **profile_component_flags(RuntimeProfile.LITE),
         "runtime_profile": "lite",
+        "memory_backend": "sqlite",
         "tapo_host": "192.0.2.10",
         "tapo_username": "camera-user",
         "tapo_password": "camera-password",
@@ -98,14 +104,25 @@ def test_runtime_config_reads_wizard_fields_in_one_place() -> None:
     )
 
 
-def test_lite_profile_syncs_only_policy_and_temperature() -> None:
+def test_lite_profile_syncs_memory_without_chroma_extra() -> None:
     assert dependency_projects(Path("/repo"), {"runtime_profile": "lite"}) == [
-        ("action-policy", Path("/repo/action-policy")),
-        (
-            "system-temperature-mcp",
-            Path("/repo/system-temperature-mcp"),
+        DependencyProject("action-policy", Path("/repo/action-policy")),
+        DependencyProject("memory-mcp", Path("/repo/memory-mcp")),
+        DependencyProject(
+            "system-temperature-mcp", Path("/repo/system-temperature-mcp")
         ),
     ]
+    memory = build_mcp_config(Path("/repo"), {"runtime_profile": "lite"})[
+        "mcpServers"
+    ]["memory"]
+    assert "--extra" not in memory["args"]
+
+
+def test_core_profile_installs_chroma_as_an_explicit_extra() -> None:
+    projects = dependency_projects(Path("/repo"), {"runtime_profile": "core"})
+
+    memory = next(project for project in projects if project.name == "memory-mcp")
+    assert memory.extras == ("chroma",)
 
 
 def test_full_profile_builds_every_mcp_server_without_collecting_api_keys() -> None:
@@ -120,6 +137,17 @@ def test_full_profile_builds_every_mcp_server_without_collecting_api_keys() -> N
     )
 
     assert tuple(config["mcpServers"]) == profile_server_ids(RuntimeProfile.FULL)
+    assert config["mcpServers"]["memory"]["env"] == {
+        "MEMORY_BACKEND": "chroma"
+    }
+    assert config["mcpServers"]["memory"]["args"] == [
+        "run",
+        "--directory",
+        str(Path("/repo/memory-mcp")),
+        "--extra",
+        "chroma",
+        "memory-mcp",
+    ]
     assert "ELEVENLABS_API_KEY" not in config["mcpServers"]["elevenlabs-t2s"]["env"]
     assert config["mcpServers"]["elevenlabs-t2s"]["env"] == {
         "GO2RTC_URL": "http://127.0.0.1:1984",

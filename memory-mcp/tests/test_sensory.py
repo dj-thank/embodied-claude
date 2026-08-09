@@ -11,15 +11,16 @@ from src.memory_mcp.sensory import SensoryIntegration
 from src.memory_mcp.types import CameraPosition
 
 
-@pytest.fixture
-async def memory_store():
-    """Create a MemoryStore instance for testing with isolated temp DB."""
+@pytest.fixture(params=("chroma", "sqlite"))
+async def memory_store(request: pytest.FixtureRequest):
+    """Run sensory behavior against both supported storage backends."""
     # Create unique temp directory for each test
     temp_dir = tempfile.mkdtemp(prefix="test_sensory_")
 
     config = MemoryConfig(
         db_path=temp_dir,
         collection_name="test_memories",
+        backend=str(request.param),
     )
     store = MemoryStore(config)
     await store.connect()
