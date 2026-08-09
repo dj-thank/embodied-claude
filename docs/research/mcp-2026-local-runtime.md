@@ -14,7 +14,7 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
 - 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature は今回 typed registry へ移行し、残るサーバーは段階移行中である。
-- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot実装後のテストは8パッケージ、計418件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、実機、各MCPホスト、外部プロバイダーのE2Eを証明しない。
+- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、USB Webcam SDK v2実装後のテストは8パッケージ、計441件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
 
 ## 一次情報から確認した変更点
 
@@ -65,6 +65,17 @@ System Temperature MCPを`mcp` v2（lock: 2.0.0）の`MCPServer`とtyped tool de
 手書きJSON schemaと名前switch dispatchを除去した。in-processと実stdio subprocessの双方で、
 modern auto接続と旧initialize接続が同じ2ツールを公開することを検証した。action-policy inventoryは
 旧`Tool(...)`定義とtyped decoratorの両方を列挙する。Claude Code / Desktop実ホスト接続は未検証である。
+
+次の小型対象としてUSB Webcam MCPもSDK v2へ移行した。2 toolの手書きschemaと名前switch dispatchを
+typed decoratorへ置き換え、camera index、width、heightの制約を生成schemaへ反映した。capture/listは
+引き続きworker threadへoffloadし、fake JPEG、runtime error、入力validation、modern/legacyのin-processと
+stdio subprocessを13件のhardware-free testで確認した。action-policy全41件もPASSした。
+
+Windows実機のcontent-free camera列挙ではindex 0、640x480を検出した。OpenCV既定backendの10 index
+直接走査12.167秒に対し、DirectShow明示とsilent loggingでは1.422秒、MCP process起動を含むtool callは
+modern 3.218秒、legacy 3.244秒だった。周辺画像は取得・保存しておらず、実`see`、他camera、Linux/macOS
+hardware E2Eは未検証である。Python基準を3.12へ上げた結果、lock package recordは46から41になったが、
+disk/runtime memory削減を直接証明する値ではない。
 
 ### MCP Apps pilot 実装状況（2026-08-09）
 

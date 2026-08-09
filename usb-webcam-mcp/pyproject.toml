@@ -2,11 +2,12 @@
 name = "usb-webcam-mcp"
 version = "0.1.0"
 description = "MCP server for USB webcam capture"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=2.0.0,<3",
     "opencv-python>=4.8.0",
     "pillow>=10.0.0",
+    "pydantic>=2.0.0,<3",
 ]
 
 [project.optional-dependencies]
@@ -18,7 +19,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]

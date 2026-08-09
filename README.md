@@ -111,6 +111,10 @@ cd usb-webcam-mcp
 uv sync
 ```
 
+このサーバーはPython MCP SDK v2のtyped registryを使う。camera scan/captureはevent loop外で実行し、
+WindowsではOpenCVのDirectShow backendを選んで不要なbackend probeとstderr warningを避ける。
+modern protocolと旧initialize clientの両stdio契約を自動試験している。
+
 WSL2 の場合、USB カメラを転送する必要がある:
 ```powershell
 # Windows側で
@@ -216,7 +220,7 @@ uv sync
 この小型サーバーは Python MCP SDK v2 の typed tool registry を採用し、modern protocol と
 旧 initialize client の両方を stdio 契約テストで検証している。対応ホストでは
 `get_system_temperature` が外部通信なしの Body Signal MCP App を表示し、非対応ホストには
-同じ温度情報をテキストで返す。他サーバーは段階移行中。
+同じ温度情報をテキストで返す。USB WebcamもSDK v2へ移行済みで、他サーバーは段階移行中。
 
 > **注意**: WSL2 環境では温度センサーにアクセスできないため動作しません。
 

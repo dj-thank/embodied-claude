@@ -4,21 +4,34 @@ import asyncio
 import base64
 import io
 import os
-from typing import Any
+from typing import Annotated, Any
 
 # Suppress OpenCV error messages
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
 os.environ["OPENCV_VIDEOIO_DEBUG"] = "0"
 
 import cv2
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import ImageContent, TextContent, Tool
+from mcp.server import MCPServer
+from mcp.types import CallToolResult, ImageContent, TextContent
 from PIL import Image
+from pydantic import Field
 
-server = Server("usb-webcam-mcp")
+try:
+    cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
+except AttributeError:
+    # Older supported OpenCV builds may only honor the environment variables above.
+    pass
+
+mcp = MCPServer("usb-webcam-mcp")
 
 MAX_IMAGE_DIMENSION = 7680
+
+
+def _open_camera(camera_index: int):
+    """Open a camera with the faster native backend on Windows."""
+    if os.name == "nt":
+        return cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+    return cv2.VideoCapture(camera_index)
 
 
 def _validate_capture_options(
@@ -43,7 +56,7 @@ def find_available_cameras(max_cameras: int = 10) -> list[dict[str, Any]]:
     """Find available camera devices."""
     cameras = []
     for i in range(max_cameras):
-        cap = cv2.VideoCapture(i)
+        cap = _open_camera(i)
         try:
             if cap.isOpened():
                 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -67,7 +80,7 @@ def capture_from_camera(
 ) -> bytes:
     """Capture an image from the specified camera."""
     _validate_capture_options(camera_index, width, height)
-    cap = cv2.VideoCapture(camera_index)
+    cap = _open_camera(camera_index)
 
     try:
         if not cap.isOpened():
@@ -98,100 +111,85 @@ def capture_from_camera(
         cap.release()
 
 
-@server.list_tools()
-async def list_tools() -> list[Tool]:
-    """List available tools."""
-    return [
-        Tool(
-            name="list_cameras",
-            description="List available camera devices connected to the system. These cameras serve as your eyes - your visual perception of the physical world.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
+@mcp.tool(
+    name="list_cameras",
+    description=(
+        "List available camera devices connected to the system. These cameras serve as "
+        "your eyes - your visual perception of the physical world."
+    ),
+    structured_output=False,
+)
+async def list_cameras() -> str:
+    """List available camera devices without blocking the MCP event loop."""
+    cameras = await asyncio.to_thread(find_available_cameras)
+    if not cameras:
+        return "No cameras found"
+
+    lines = ["Available cameras:"]
+    for camera in cameras:
+        lines.append(f"  - Index {camera['index']}: {camera['width']}x{camera['height']}")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="see",
+    description=(
+        "Capture an image from a USB webcam. This camera serves as your eyes - your visual "
+        "perception of the physical world. Use this tool to see what's happening around you. "
+        "Returns the image as base64-encoded JPEG."
+    ),
+    structured_output=False,
+)
+async def see(
+    camera_index: Annotated[
+        int,
+        Field(ge=0, description="Camera device index (default: 0)"),
+    ] = 0,
+    width: Annotated[
+        int | None,
+        Field(
+            ge=1,
+            le=MAX_IMAGE_DIMENSION,
+            description="Desired image width in pixels (optional)",
         ),
-        Tool(
-            name="see",
-            description="Capture an image from a USB webcam. This camera serves as your eyes - your visual perception of the physical world. Use this tool to see what's happening around you. Returns the image as base64-encoded JPEG.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "camera_index": {
-                        "type": "integer",
-                        "description": "Camera device index (default: 0)",
-                        "default": 0,
-                    },
-                    "width": {
-                        "type": "integer",
-                        "description": "Desired image width in pixels (optional)",
-                    },
-                    "height": {
-                        "type": "integer",
-                        "description": "Desired image height in pixels (optional)",
-                    },
-                },
-                "required": [],
-            },
+    ] = None,
+    height: Annotated[
+        int | None,
+        Field(
+            ge=1,
+            le=MAX_IMAGE_DIMENSION,
+            description="Desired image height in pixels (optional)",
         ),
-    ]
-
-
-@server.call_tool()
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
-    """Handle tool calls."""
-    if name == "list_cameras":
-        cameras = await asyncio.to_thread(find_available_cameras)
-        if not cameras:
-            return [TextContent(type="text", text="No cameras found")]
-
-        lines = ["Available cameras:"]
-        for cam in cameras:
-            lines.append(f"  - Index {cam['index']}: {cam['width']}x{cam['height']}")
-        return [TextContent(type="text", text="\n".join(lines))]
-
-    elif name == "see":
-        camera_index = arguments.get("camera_index", 0)
-        width = arguments.get("width")
-        height = arguments.get("height")
-
-        try:
-            image_bytes = await asyncio.to_thread(
-                capture_from_camera,
-                camera_index,
-                width,
-                height,
-            )
-            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-
-            return [
-                ImageContent(
-                    type="image",
-                    data=image_base64,
-                    mimeType="image/jpeg",
-                )
-            ]
-        except (RuntimeError, ValueError) as e:
-            return [TextContent(type="text", text=f"Error: {e}")]
-
-    else:
-        return [TextContent(type="text", text=f"Unknown tool: {name}")]
-
-
-async def run_server():
-    """Run the MCP server."""
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
+    ] = None,
+) -> CallToolResult:
+    """Capture one JPEG without blocking the MCP event loop."""
+    try:
+        image_bytes = await asyncio.to_thread(
+            capture_from_camera,
+            camera_index,
+            width,
+            height,
         )
+    except (RuntimeError, ValueError) as error:
+        return CallToolResult(
+            isError=True,
+            content=[TextContent(type="text", text=f"Error: {error}")],
+        )
+
+    return CallToolResult(
+        content=[
+            ImageContent(
+                type="image",
+                data=base64.b64encode(image_bytes).decode("ascii"),
+                mimeType="image/jpeg",
+            )
+        ]
+    )
 
 
 def main():
     """Entry point."""
-    import asyncio
-    asyncio.run(run_server())
+    mcp.run()
 
 
 if __name__ == "__main__":

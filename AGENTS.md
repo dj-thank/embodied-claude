@@ -24,8 +24,8 @@ Run commands from the target subproject directory.
 - `uv run --extra dev ruff check .`: Lint a subproject.
 
 ## Coding Style & Naming Conventions
-- Python 3.10+ baseline; `system-temperature-mcp/`, `local-inference-mcp/`, and
-  `installer/` require Python 3.12+.
+- Python 3.10+ baseline; `usb-webcam-mcp/`, `system-temperature-mcp/`,
+  `local-inference-mcp/`, and `installer/` require Python 3.12+.
 - 4‑space indentation, `snake_case` modules, `test_*.py` tests.
 - Ruff line length is 100; asyncio is the default style for async work.
 
