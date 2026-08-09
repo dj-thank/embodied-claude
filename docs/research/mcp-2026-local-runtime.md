@@ -14,7 +14,7 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
 - 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature は今回 typed registry へ移行し、残るサーバーは段階移行中である。
-- Runtime Profile、Memory Lite、SDK v2 pilot 実装後のテストは 7 パッケージ、計 373 件が PASS し、各 Ruff 検査も PASS した。これはローカル検証であり、実機、各 MCP ホスト、MCP Apps、外部プロバイダーの E2E を証明しない。
+- Runtime Profile、Memory Lite、SDK v2 / Apps pilot 実装後のテストは 7 パッケージ、計 376 件が PASS し、各 Ruff 検査も PASS した。これはローカル検証であり、実機、各 MCP ホスト、外部プロバイダーの E2E を証明しない。
 
 ## 一次情報から確認した変更点
 
@@ -61,6 +61,14 @@ System Temperature MCPを`mcp` v2（lock: 2.0.0）の`MCPServer`とtyped tool de
 手書きJSON schemaと名前switch dispatchを除去した。in-processと実stdio subprocessの双方で、
 modern auto接続と旧initialize接続が同じ2ツールを公開することを検証した。action-policy inventoryは
 旧`Tool(...)`定義とtyped decoratorの両方を列挙する。Claude Code / Desktop実ホスト接続は未検証である。
+
+### MCP Apps pilot 実装状況（2026-08-09）
+
+同じSystem Temperature MCPに、`ui://sanpoloid/body-temperature.html`でBody Signal dashboardを
+追加した。HTML/CSS/JSは単一resourceに内包し、外部origin、追加permission、network fetchを使わない。
+toolはtext fallbackとstructuredContentを同時に返し、UIはhost theme変数、初回tool result、read-only
+refreshに対応する。Apps capability、tool metadata、resource MIME、structured resultは自動試験済みで、
+Edge headlessによるローカル描画も確認した。MCP Apps対応実ホストでのiframe表示は未検証である。
 
 ## 一次情報
 

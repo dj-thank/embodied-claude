@@ -4,6 +4,8 @@ import sys
 
 import pytest
 from mcp import Client, StdioServerParameters, stdio_client
+from mcp.client import advertise
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from system_temperature_mcp import server
 
@@ -61,6 +63,33 @@ async def test_typed_registry_dispatches_modern_and_legacy_clients(mode: str) ->
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_temperature_tool_keeps_text_fallback_for_all_clients(
+    mode: str, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        server,
+        "get_all_temperatures",
+        lambda: {
+            "feeling": "快適やで〜。ちょうどええ感じ!",
+            "temperatures": [],
+        },
+    )
+
+    async with Client(server.mcp, mode=mode) as client:
+        result = await client.call_tool("get_system_temperature", {})
+
+    assert not result.is_error
+    assert result.content[0].type == "text"
+    assert result.content[0].text.startswith("快適やで〜。ちょうどええ感じ!")
+    assert "センサーが見つかりませんでした" in result.content[0].text
+    assert result.structured_content == {
+        "feeling": "快適やで〜。ちょうどええ感じ!",
+        "temperatures": [],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
 async def test_stdio_server_supports_modern_and_legacy_clients(mode: str) -> None:
     parameters = StdioServerParameters(
         command=sys.executable,
@@ -74,3 +103,53 @@ async def test_stdio_server_supports_modern_and_legacy_clients(mode: str) -> Non
         "get_system_temperature",
         "get_current_time",
     ]
+
+
+@pytest.mark.asyncio
+async def test_temperature_tool_exposes_a_network_free_mcp_app(monkeypatch) -> None:
+    monkeypatch.setattr(
+        server,
+        "get_all_temperatures",
+        lambda: {
+            "feeling": "快適やで〜。ちょうどええ感じ!",
+            "temperatures": [
+                {
+                    "source": "test",
+                    "name": "cpu/package",
+                    "temperature_celsius": 48.5,
+                }
+            ],
+        },
+    )
+    extension = advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})
+
+    async with Client(server.mcp, extensions=[extension]) as client:
+        tools = await client.list_tools()
+        resources = await client.list_resources()
+        result = await client.call_tool("get_system_temperature", {})
+        resource = await client.read_resource(server.DASHBOARD_URI)
+
+    temperature_tool = next(
+        tool for tool in tools.tools if tool.name == "get_system_temperature"
+    )
+    assert temperature_tool.meta == {
+        "ui": {
+            "resourceUri": server.DASHBOARD_URI,
+            "visibility": ["model", "app"],
+        }
+    }
+    assert [item.uri for item in resources.resources] == [server.DASHBOARD_URI]
+    assert resource.contents[0].mime_type == APP_MIME_TYPE
+    assert "ui/notifications/tool-result" in resource.contents[0].text
+    assert "http://" not in resource.contents[0].text
+    assert "https://" not in resource.contents[0].text
+    assert result.structured_content == {
+        "feeling": "快適やで〜。ちょうどええ感じ!",
+        "temperatures": [
+            {
+                "source": "test",
+                "name": "cpu/package",
+                "temperature_celsius": 48.5,
+            }
+        ],
+    }

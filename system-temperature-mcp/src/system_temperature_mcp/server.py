@@ -7,8 +7,20 @@ from zoneinfo import ZoneInfo
 
 import psutil
 from mcp.server import MCPServer
+from mcp.server.apps import Apps
+from mcp.types import CallToolResult, TextContent
 
-mcp = MCPServer("system-temperature-mcp")
+from .dashboard import DASHBOARD_HTML, DASHBOARD_URI
+
+apps = Apps()
+apps.add_html_resource(
+    DASHBOARD_URI,
+    DASHBOARD_HTML,
+    name="sanpoloid_body_temperature",
+    title="Sanpoloid Body Signal",
+    description="Read-only local system temperature dashboard",
+    prefers_border=False,
+)
 
 
 def get_thermal_zones() -> list[dict[str, Any]]:
@@ -146,7 +158,9 @@ def get_all_temperatures() -> dict[str, Any]:
     }
 
 
-@mcp.tool(
+@apps.tool(
+    resource_uri=DASHBOARD_URI,
+    visibility=["model", "app"],
     name="get_system_temperature",
     description=(
         "Get the current system temperature (CPU, GPU, etc.). This is your sense of "
@@ -155,7 +169,7 @@ def get_all_temperatures() -> dict[str, Any]:
     ),
     structured_output=False,
 )
-def get_system_temperature() -> str:
+def get_system_temperature() -> CallToolResult:
     """Format all available temperature readings for the MCP caller."""
     result = get_all_temperatures()
     lines = [result["feeling"], "", "【詳細】"]
@@ -167,7 +181,13 @@ def get_system_temperature() -> str:
             )
     else:
         lines.append("  センサーが見つかりませんでした")
-    return "\n".join(lines)
+    return CallToolResult(
+        content=[TextContent(type="text", text="\n".join(lines))],
+        structuredContent=result,
+    )
+
+
+mcp = MCPServer("system-temperature-mcp", extensions=[apps])
 
 
 @mcp.tool(
