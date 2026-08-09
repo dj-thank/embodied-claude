@@ -13,8 +13,8 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - 5 個の MCP サーバーと ElevenLabs 連携があり、合計 51 ツールを action policy が分類している。
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
-- 各サーバーは MCP SDK v1 系の JSON schema と dispatch を手書きしている。ツール定義、action policy、文書の重複は将来の drift を生みやすい。
-- Runtime Profile と Memory Lite 実装後のテストは 7 パッケージ、計 368 件が PASS し、各 Ruff 検査も PASS した。これはローカル検証であり、実機、各 MCP ホスト、MCP Apps、外部プロバイダーの E2E を証明しない。
+- 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature は今回 typed registry へ移行し、残るサーバーは段階移行中である。
+- Runtime Profile、Memory Lite、SDK v2 pilot 実装後のテストは 7 パッケージ、計 373 件が PASS し、各 Ruff 検査も PASS した。これはローカル検証であり、実機、各 MCP ホスト、MCP Apps、外部プロバイダーの E2E を証明しない。
 
 ## 一次情報から確認した変更点
 
@@ -54,6 +54,13 @@ ChromaとSQLiteの両方で検証した。クリーンなSQLite構成は32パッ
 SQLiteの検索品質はembedding semantic searchと同等とは主張しない。
 Windows installer EXEは再ビルドし、ローカルで起動プロセスの生存まで確認したが、
 別PCへの配布・導入は未検証である。
+
+### SDK v2 pilot 実装状況（2026-08-09）
+
+System Temperature MCPを`mcp` v2（lock: 2.0.0）の`MCPServer`とtyped tool decoratorへ移行し、
+手書きJSON schemaと名前switch dispatchを除去した。in-processと実stdio subprocessの双方で、
+modern auto接続と旧initialize接続が同じ2ツールを公開することを検証した。action-policy inventoryは
+旧`Tool(...)`定義とtyped decoratorの両方を列挙する。Claude Code / Desktop実ホスト接続は未検証である。
 
 ## 一次情報
 

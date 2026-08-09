@@ -6,11 +6,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import psutil
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.server import MCPServer
 
-server = Server("system-temperature-mcp")
+mcp = MCPServer("system-temperature-mcp")
 
 
 def get_thermal_zones() -> list[dict[str, Any]]:
@@ -148,6 +146,38 @@ def get_all_temperatures() -> dict[str, Any]:
     }
 
 
+@mcp.tool(
+    name="get_system_temperature",
+    description=(
+        "Get the current system temperature (CPU, GPU, etc.). This is your sense of "
+        "body temperature - how hot or cold your 'body' (the computer) is running. "
+        "Use this to feel your own physical state."
+    ),
+    structured_output=False,
+)
+def get_system_temperature() -> str:
+    """Format all available temperature readings for the MCP caller."""
+    result = get_all_temperatures()
+    lines = [result["feeling"], "", "【詳細】"]
+    if result["temperatures"]:
+        for temperature in result["temperatures"]:
+            lines.append(
+                f"  - {temperature['name']}: "
+                f"{temperature['temperature_celsius']:.1f}°C"
+            )
+    else:
+        lines.append("  センサーが見つかりませんでした")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="get_current_time",
+    description=(
+        "Get the current date and time. Use this to know what time it is, "
+        "check if it's morning/afternoon/night, or when you want to be aware of the time."
+    ),
+    structured_output=False,
+)
 def get_current_time() -> str:
     """Get current time in Japan timezone."""
     jst = ZoneInfo("Asia/Tokyo")
@@ -181,68 +211,9 @@ def get_current_time() -> str:
     return f"今は {time_str} やで。{comment}"
 
 
-@server.list_tools()
-async def list_tools() -> list[Tool]:
-    """List available tools."""
-    return [
-        Tool(
-            name="get_system_temperature",
-            description="Get the current system temperature (CPU, GPU, etc.). This is your sense of body temperature - how hot or cold your 'body' (the computer) is running. Use this to feel your own physical state.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        ),
-        Tool(
-            name="get_current_time",
-            description="Get the current date and time. Use this to know what time it is, check if it's morning/afternoon/night, or when you want to be aware of the time.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        ),
-    ]
-
-
-@server.call_tool()
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle tool calls."""
-    if name == "get_system_temperature":
-        result = get_all_temperatures()
-
-        lines = [result["feeling"], "", "【詳細】"]
-
-        if result["temperatures"]:
-            for temp in result["temperatures"]:
-                lines.append(f"  - {temp['name']}: {temp['temperature_celsius']:.1f}°C")
-        else:
-            lines.append("  センサーが見つかりませんでした")
-
-        return [TextContent(type="text", text="\n".join(lines))]
-
-    elif name == "get_current_time":
-        result = get_current_time()
-        return [TextContent(type="text", text=result)]
-
-    return [TextContent(type="text", text=f"Unknown tool: {name}")]
-
-
-async def run_server():
-    """Run the MCP server."""
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
-
-
 def main():
     """Entry point."""
-    import asyncio
-    asyncio.run(run_server())
+    mcp.run()
 
 
 if __name__ == "__main__":

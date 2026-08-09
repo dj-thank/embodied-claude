@@ -159,16 +159,36 @@ def test_every_embodied_mcp_tool_has_an_explicit_classification() -> None:
     for server_name, path in servers.items():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if not isinstance(node.func, ast.Name) or node.func.id != "Tool":
-                continue
-            name_keyword = next(
-                (keyword for keyword in node.keywords if keyword.arg == "name"),
-                None,
-            )
-            if name_keyword and isinstance(name_keyword.value, ast.Constant):
-                discovered.add(f"mcp__{server_name}__{name_keyword.value.value}")
+            if isinstance(node, ast.Call):
+                if not isinstance(node.func, ast.Name) or node.func.id != "Tool":
+                    continue
+                name_keyword = next(
+                    (keyword for keyword in node.keywords if keyword.arg == "name"),
+                    None,
+                )
+                if name_keyword and isinstance(name_keyword.value, ast.Constant):
+                    discovered.add(f"mcp__{server_name}__{name_keyword.value.value}")
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for decorator in node.decorator_list:
+                    if not isinstance(decorator, ast.Call):
+                        continue
+                    if not (
+                        isinstance(decorator.func, ast.Attribute)
+                        and decorator.func.attr == "tool"
+                    ):
+                        continue
+                    name_keyword = next(
+                        (
+                            keyword
+                            for keyword in decorator.keywords
+                            if keyword.arg == "name"
+                        ),
+                        None,
+                    )
+                    tool_name = node.name
+                    if name_keyword and isinstance(name_keyword.value, ast.Constant):
+                        tool_name = str(name_keyword.value.value)
+                    discovered.add(f"mcp__{server_name}__{tool_name}")
 
     assert len(discovered) == 51
     unclassified = {

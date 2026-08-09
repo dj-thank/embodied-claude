@@ -208,6 +208,9 @@ cd system-temperature-mcp
 uv sync
 ```
 
+この小型サーバーは Python MCP SDK v2 の typed tool registry を採用し、modern protocol と
+旧 initialize client の両方を stdio 契約テストで検証している。他サーバーは段階移行中。
+
 > **注意**: WSL2 環境では温度センサーにアクセスできないため動作しません。
 
 ### 3. Claude Code 設定
