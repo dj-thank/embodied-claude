@@ -13,8 +13,8 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - 既存5 MCPにlocal-inference MCPを加え、合計53ツールをaction policyが分類している。
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
-- 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature、USB Webcam、ElevenLabs TTS、Wi-Fi Cameraはtyped registryへ移行し、Memory MCPが段階移行の残対象である。
-- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、4 MCPのSDK v2実装後のテストは8パッケージ、計464件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーやcamera hardwareのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
+- 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature、USB Webcam、ElevenLabs TTS、Wi-Fi Camera、Memoryはtyped registryへ移行した。Memoryは公開registryを移行済みだが、既存dispatcherを内部互換層として残す段階移行である。
+- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、5 MCPのSDK v2実装後のテストは8パッケージ、計470件がPASSした。Memory変更範囲では252件、action-policyは41件、Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーやcamera hardwareのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
 
 ## 一次情報から確認した変更点
 
@@ -91,6 +91,13 @@ subprocessでもmodern/legacy双方がtool一覧を返せることを確認し�
 MCP errorとして返し、RTSP credentialを応答とlogからredactする。実cameraへの接続、撮影、PTZ移動、
 録音、Whisper文字起こしは未検証である。lock package recordは100から97になったが、disk/runtime
 memory削減を直接証明する値ではない。
+
+Memory MCPは23 toolの公開面をSDK v2 typed registryへ移行し、importance、検索件数、連想深度などの
+範囲を生成schemaで制約した。modern/legacyのin-process Clientと、SQLiteを使う実stdio subprocessを含む
+252件がPASSし、action-policyの全53 tool分類も維持した。削除はoperator opt-in、短命な一回限りtoken、
+exact memory ID bindingを維持し、ToMへ渡す永続記憶は未信頼JSONとして隔離する。挙動回帰を抑えるため
+既存23分岐dispatcherは内部互換層として残しており、重複schemaと分岐の除去は次段階である。Chroma実装を
+含むlocal suiteは検証したが、Claude Code / Desktop実ホスト接続と既存実データの移行は未検証である。
 
 ### MCP Apps pilot 実装状況（2026-08-09）
 

@@ -72,7 +72,7 @@ helper経由で他のMCP toolを呼べないため、身体操作とaction-polic
 - **GPU**(音声認識用): NVIDIA GPU(Whisper用、GeForceシリーズのVRAM 8GB以上のグラボ推奨)
 
 ### ソフトウェア
-- Python 3.10+
+- Python 3.12+（主要MCP、installer）
 - uv(Python パッケージマネージャー)
 - ffmpeg(画像・音声キャプチャ用)
 - OpenCV(USB カメラ用)
@@ -197,6 +197,10 @@ uv sync --extra chroma
 
 `MEMORY_BACKEND=sqlite|chroma|auto`で選択できます。backend間の既存記憶は自動移行されません。
 
+23 toolの公開面はPython MCP SDK v2のtyped registryで生成し、入力範囲をprotocol境界で検証する。
+modern/legacyのin-process Clientと、軽量SQLite backendを使う実stdio subprocessを自動試験している。
+実行挙動は安全性を維持するため既存dispatcherを内部互換層として残しており、その分解は次段階である。
+
 #### elevenlabs-t2s-mcp(声)
 
 ```bash
@@ -230,8 +234,8 @@ uv sync
 この小型サーバーは Python MCP SDK v2 の typed tool registry を採用し、modern protocol と
 旧 initialize client の両方を stdio 契約テストで検証している。対応ホストでは
 `get_system_temperature` が外部通信なしの Body Signal MCP App を表示し、非対応ホストには
-同じ温度情報をテキストで返す。USB WebcamとElevenLabs TTSもSDK v2へ移行済みで、
-他サーバーは段階移行中。
+同じ温度情報をテキストで返す。USB Webcam、Wi-Fi Camera、Memory、ElevenLabs TTSも
+SDK v2へ移行済みである。
 
 > **注意**: WSL2 環境では温度センサーにアクセスできないため動作しません。
 

@@ -6,12 +6,13 @@ import json
 import logging
 import secrets
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from mcp.server import MCPServer
 from mcp.types import CallToolResult, TextContent, Tool
+from pydantic import BaseModel, Field
 
 from .config import MemoryConfig, ServerConfig
 from .episode import EpisodeManager
@@ -21,6 +22,62 @@ from .types import CameraPosition, MemorySearchResult
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+EmotionName = Literal[
+    "happy", "sad", "surprised", "moved", "excited", "nostalgic", "curious", "neutral"
+]
+CategoryName = Literal[
+    "daily", "philosophical", "technical", "memory", "observation", "feeling", "conversation"
+]
+LinkName = Literal["similar", "caused_by", "leads_to", "related"]
+Importance = Annotated[int, Field(ge=1, le=5)]
+LinkThreshold = Annotated[float, Field(ge=0, le=2)]
+Results10 = Annotated[int, Field(ge=1, le=10)]
+Results20 = Annotated[int, Field(ge=1, le=20)]
+Results50 = Annotated[int, Field(ge=1, le=50)]
+Depth3 = Annotated[int, Field(ge=1, le=3)]
+Depth5 = Annotated[int, Field(ge=1, le=5)]
+
+
+class CameraPositionInput(BaseModel):
+    """Typed public camera-position input."""
+
+    pan_angle: int
+    tilt_angle: int
+    preset_id: str | None = None
+
+
+class _BehaviorRouter:
+    """Keep the proven v1 behavior dispatcher while the public API moves to v2."""
+
+    def __init__(self) -> None:
+        self.tool_handler: Callable[
+            [str, dict[str, Any]], Awaitable[list[TextContent] | CallToolResult]
+        ] | None = None
+
+    def list_tools(self):
+        """Accept the legacy schema function until duplicated schemas are removed."""
+
+        def register(function):
+            return function
+
+        return register
+
+    def call_tool(self):
+        """Capture the existing behavior function without SDK-private APIs."""
+
+        def register(function):
+            self.tool_handler = function
+            return function
+
+        return register
+
+    async def dispatch(
+        self, name: str, arguments: dict[str, Any]
+    ) -> list[TextContent] | CallToolResult:
+        if self.tool_handler is None:
+            return _tool_error("tool dispatcher not initialized")
+        return await self.tool_handler(name, arguments)
 
 
 def _tool_error(message: str) -> CallToolResult:
@@ -83,18 +140,23 @@ class MemoryMCPServer:
     """MCP Server that gives AI long-term memory."""
 
     def __init__(self):
-        self._server = Server("memory-mcp")
+        self._server_config = ServerConfig.from_env()
+        self.mcp = MCPServer(
+            self._server_config.name,
+            version=self._server_config.version,
+        )
+        self._behavior_router = _BehaviorRouter()
         self._memory_store: MemoryStore | None = None
         self._episode_manager: EpisodeManager | None = None  # Phase 4.2
         self._sensory_integration: SensoryIntegration | None = None  # Phase 4.3
-        self._server_config = ServerConfig.from_env()
         self._pending_deletion: tuple[str, str, float] | None = None
-        self._setup_handlers()
+        self._setup_behavior_dispatcher()
+        self._setup_typed_tools()
 
-    def _setup_handlers(self) -> None:
-        """Set up MCP tool handlers."""
+    def _setup_behavior_dispatcher(self) -> None:
+        """Set up the retained behavior dispatcher."""
 
-        @self._server.list_tools()
+        @self._behavior_router.list_tools()
         async def list_tools() -> list[Tool]:
             """List available memory tools."""
             return [
@@ -708,7 +770,7 @@ class MemoryMCPServer:
                 ),
             ]
 
-        @self._server.call_tool()
+        @self._behavior_router.call_tool()
         async def call_tool(
             name: str, arguments: dict[str, Any]
         ) -> list[TextContent] | CallToolResult:
@@ -1459,6 +1521,176 @@ Date Range:
                 logger.error("Error in tool %s (%s)", name, type(error).__name__)
                 return _tool_error("tool execution failed")
 
+    async def _dispatch(
+        self, name: str, arguments: dict[str, Any]
+    ) -> list[TextContent] | CallToolResult:
+        """Run one validated v2 tool through the existing behavior boundary."""
+        return await self._behavior_router.dispatch(
+            name, {key: value for key, value in arguments.items() if value is not None}
+        )
+
+    def _setup_typed_tools(self) -> None:
+        """Register the public SDK v2 typed tool surface."""
+
+        @self.mcp.tool(name="remember", description="Save a memory to long-term storage.", structured_output=False)
+        async def remember(
+            content: str,
+            emotion: EmotionName = "neutral",
+            importance: Importance = 3,
+            category: CategoryName = "daily",
+            auto_link: bool = True,
+            link_threshold: LinkThreshold = 0.8,
+        ):
+            return await self._dispatch("remember", locals())
+
+        @self.mcp.tool(name="prepare_forget", description="Prepare a one-time deletion token without deleting data.", structured_output=False)
+        async def prepare_forget(memory_id: str):
+            return await self._dispatch("prepare_forget", locals())
+
+        @self.mcp.tool(name="forget", description="Delete one memory using a fresh prepare_forget token.", structured_output=False)
+        async def forget(memory_id: str, confirmation_token: str):
+            return await self._dispatch("forget", locals())
+
+        @self.mcp.tool(name="search_memories", description="Search long-term memories.", structured_output=False)
+        async def search_memories(
+            query: str,
+            n_results: Results20 = 5,
+            emotion_filter: EmotionName | None = None,
+            category_filter: CategoryName | None = None,
+            date_from: str | None = None,
+            date_to: str | None = None,
+        ):
+            return await self._dispatch("search_memories", locals())
+
+        @self.mcp.tool(name="recall", description="Recall memories relevant to the current context.", structured_output=False)
+        async def recall(context: str, n_results: Results10 = 3):
+            return await self._dispatch("recall", locals())
+
+        @self.mcp.tool(name="list_recent_memories", description="List recent memories.", structured_output=False)
+        async def list_recent_memories(
+            limit: Results50 = 10,
+            category: CategoryName | None = None,
+        ):
+            return await self._dispatch("list_recent_memories", locals())
+
+        @self.mcp.tool(name="get_memory_stats", description="Get memory-store statistics.", structured_output=False)
+        async def get_memory_stats():
+            return await self._dispatch("get_memory_stats", {})
+
+        @self.mcp.tool(name="recall_with_associations", description="Recall memories and follow their associations.", structured_output=False)
+        async def recall_with_associations(
+            context: str,
+            n_results: Results10 = 3,
+            chain_depth: Depth3 = 1,
+        ):
+            return await self._dispatch("recall_with_associations", locals())
+
+        @self.mcp.tool(name="recall_divergent", description="Explore divergent associative memory paths.", structured_output=False)
+        async def recall_divergent(
+            context: str,
+            n_results: Results20 = 5,
+            max_branches: Annotated[int, Field(ge=1, le=8)] = 3,
+            max_depth: Depth5 = 3,
+            temperature: Annotated[float, Field(ge=0.1, le=2)] = 0.7,
+            include_diagnostics: bool = False,
+        ):
+            return await self._dispatch("recall_divergent", locals())
+
+        @self.mcp.tool(name="get_association_diagnostics", description="Inspect association-search diagnostics.", structured_output=False)
+        async def get_association_diagnostics(
+            context: str,
+            sample_size: Annotated[int, Field(ge=3, le=20)] = 20,
+        ):
+            return await self._dispatch("get_association_diagnostics", locals())
+
+        @self.mcp.tool(name="consolidate_memories", description="Replay recent accesses and strengthen useful links.", structured_output=False)
+        async def consolidate_memories(
+            window_hours: Annotated[int, Field(ge=1, le=168)] = 24,
+            max_replay_events: Annotated[int, Field(ge=1, le=1000)] = 200,
+            link_update_strength: Annotated[float, Field(ge=0.01, le=1)] = 0.2,
+        ):
+            return await self._dispatch("consolidate_memories", locals())
+
+        @self.mcp.tool(name="get_memory_chain", description="Trace bidirectional links around one memory.", structured_output=False)
+        async def get_memory_chain(memory_id: str, depth: Depth5 = 2):
+            return await self._dispatch("get_memory_chain", locals())
+
+        @self.mcp.tool(name="create_episode", description="Group memories into one episode.", structured_output=False)
+        async def create_episode(
+            title: str,
+            memory_ids: list[str],
+            participants: list[str] | None = None,
+            auto_summarize: bool = True,
+        ):
+            return await self._dispatch("create_episode", locals())
+
+        @self.mcp.tool(name="search_episodes", description="Search memory episodes.", structured_output=False)
+        async def search_episodes(query: str, n_results: Results20 = 5):
+            return await self._dispatch("search_episodes", locals())
+
+        @self.mcp.tool(name="get_episode_memories", description="List memories in an episode.", structured_output=False)
+        async def get_episode_memories(episode_id: str):
+            return await self._dispatch("get_episode_memories", locals())
+
+        @self.mcp.tool(name="save_visual_memory", description="Save a memory with image and camera-position metadata.", structured_output=False)
+        async def save_visual_memory(
+            content: str,
+            image_path: str,
+            camera_position: CameraPositionInput,
+            emotion: EmotionName = "neutral",
+            importance: Importance = 3,
+        ):
+            arguments = locals()
+            arguments["camera_position"] = camera_position.model_dump(exclude_none=True)
+            return await self._dispatch("save_visual_memory", arguments)
+
+        @self.mcp.tool(name="save_audio_memory", description="Save a memory with audio and transcript metadata.", structured_output=False)
+        async def save_audio_memory(
+            content: str,
+            audio_path: str,
+            transcript: str,
+            emotion: EmotionName = "neutral",
+            importance: Importance = 3,
+        ):
+            return await self._dispatch("save_audio_memory", locals())
+
+        @self.mcp.tool(name="recall_by_camera_position", description="Recall visual memories near a camera position.", structured_output=False)
+        async def recall_by_camera_position(
+            pan_angle: int,
+            tilt_angle: int,
+            tolerance: Annotated[int, Field(ge=1, le=90)] = 15,
+        ):
+            return await self._dispatch("recall_by_camera_position", locals())
+
+        @self.mcp.tool(name="get_working_memory", description="Get recent working-memory items.", structured_output=False)
+        async def get_working_memory(n_results: Results20 = 10):
+            return await self._dispatch("get_working_memory", locals())
+
+        @self.mcp.tool(name="refresh_working_memory", description="Refresh working memory from important long-term memories.", structured_output=False)
+        async def refresh_working_memory():
+            return await self._dispatch("refresh_working_memory", {})
+
+        @self.mcp.tool(name="link_memories", description="Create an explicit causal or semantic link.", structured_output=False)
+        async def link_memories(
+            source_id: str,
+            target_id: str,
+            link_type: LinkName = "caused_by",
+            note: str | None = None,
+        ):
+            return await self._dispatch("link_memories", locals())
+
+        @self.mcp.tool(name="get_causal_chain", description="Trace causes or effects from one memory.", structured_output=False)
+        async def get_causal_chain(
+            memory_id: str,
+            direction: Literal["backward", "forward"] = "backward",
+            max_depth: Depth5 = 3,
+        ):
+            return await self._dispatch("get_causal_chain", locals())
+
+        @self.mcp.tool(name="tom", description="Build a prompt-safe perspective-taking context from relevant memories.", structured_output=False)
+        async def tom(situation: str, person: str = "コウタ"):
+            return await self._dispatch("tom", locals())
+
     async def connect_memory(self) -> None:
         """Connect to memory store (Phase 4: with episode manager & sensory integration)."""
         self._pending_deletion = None
@@ -1496,12 +1728,7 @@ Date Range:
     async def run(self) -> None:
         """Run the MCP server."""
         async with self.run_context():
-            async with stdio_server() as (read_stream, write_stream):
-                await self._server.run(
-                    read_stream,
-                    write_stream,
-                    self._server.create_initialization_options(),
-                )
+            await self.mcp.run_stdio_async()
 
 
 def main() -> None:

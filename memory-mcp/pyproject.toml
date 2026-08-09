@@ -7,9 +7,10 @@ name = "memory-mcp"
 version = "0.1.0"
 description = "MCP server for AI long-term memory - Let AI remember across sessions!"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=2,<3",
+    "pydantic>=2,<3",
     "python-dotenv>=1.0.0",
 ]
 
@@ -32,7 +33,7 @@ packages = ["src/memory_mcp"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]

@@ -27,7 +27,7 @@ Both backends share the same MCP tools, metadata, episode, link, and guarded-del
 git clone https://github.com/yourusername/memory-mcp.git
 cd memory-mcp
 
-# Lightweight SQLite install (32 resolved packages in the 2026-08-09 lock)
+# Lightweight SQLite install (ChromaDB is not installed)
 uv sync
 
 # Optional rich semantic backend
@@ -51,7 +51,7 @@ Set these environment variables or create a `.env` file:
 
 ## Tools
 
-### save_memory
+### remember
 
 Save a memory to long-term storage.
 
@@ -94,7 +94,7 @@ List the most recent memories.
 ```json
 {
   "limit": 10,
-  "category_filter": "memory"
+  "category": "memory"
 }
 ```
 
@@ -145,6 +145,12 @@ Add to your `~/.claude.json`:
 ```
 
 ## Development
+
+The public surface uses the Python MCP SDK v2 typed registry for all 23 tools.
+Tests cover modern and legacy in-process clients plus a real stdio subprocess
+using the lightweight SQLite backend. The established behavior dispatcher is
+temporarily retained behind that typed boundary while it is decomposed in a
+later refactor.
 
 ```bash
 # Install dev dependencies

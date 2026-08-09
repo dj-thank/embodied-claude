@@ -24,7 +24,7 @@ Run commands from the target subproject directory.
 - `uv run --extra dev ruff check .`: Lint a subproject.
 
 ## Coding Style & Naming Conventions
-- Python 3.10+ baseline; `wifi-cam-mcp/`, `usb-webcam-mcp/`,
+- Python 3.10+ baseline; `wifi-cam-mcp/`, `usb-webcam-mcp/`, `memory-mcp/`,
   `system-temperature-mcp/`, `elevenlabs-t2s-mcp/`, `local-inference-mcp/`,
   and `installer/` require Python 3.12+.
 - 4‑space indentation, `snake_case` modules, `test_*.py` tests.
