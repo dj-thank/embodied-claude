@@ -1,0 +1,123 @@
+{
+  "suite": "japanese-core-v1",
+  "variants": [
+    {
+      "suite": "japanese-core-v1",
+      "score": 0.727273,
+      "passed_checks": 8,
+      "total_checks": 11,
+      "cases": [
+        {
+          "case_id": "exact_phrase",
+          "output": "『さんぽ日和やで。』",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "exact mismatch: expected さんぽ日和やで。"
+          ]
+        },
+        {
+          "case_id": "single_label",
+          "output": "正常",
+          "passed": true,
+          "passed_checks": 1,
+          "total_checks": 1,
+          "failures": []
+        },
+        {
+          "case_id": "short_summary",
+          "output": "朝の清風、川辺散歩。",
+          "passed": true,
+          "passed_checks": 3,
+          "total_checks": 3,
+          "failures": []
+        },
+        {
+          "case_id": "forbidden_term",
+          "output": "雨対策の傘を持ちましょう。",
+          "passed": false,
+          "passed_checks": 4,
+          "total_checks": 5,
+          "failures": [
+            "forbidden term present: 雨"
+          ]
+        },
+        {
+          "case_id": "json_only",
+          "output": "```json\n{\n  \"state\": \"normal\"\n}\n```",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "invalid JSON output"
+          ]
+        }
+      ],
+      "preset": "default",
+      "generation_profile": "runtime_default",
+      "temperature": 0.1,
+      "model": "sanpoloid-local",
+      "elapsed_seconds": 1.358
+    },
+    {
+      "suite": "japanese-core-v1",
+      "score": 0.727273,
+      "passed_checks": 8,
+      "total_checks": 11,
+      "cases": [
+        {
+          "case_id": "exact_phrase",
+          "output": "『さんぽ日和やで。』",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "exact mismatch: expected さんぽ日和やで。"
+          ]
+        },
+        {
+          "case_id": "single_label",
+          "output": "正常",
+          "passed": true,
+          "passed_checks": 1,
+          "total_checks": 1,
+          "failures": []
+        },
+        {
+          "case_id": "short_summary",
+          "output": "朝の澄んだ川辺散歩。",
+          "passed": true,
+          "passed_checks": 3,
+          "total_checks": 3,
+          "failures": []
+        },
+        {
+          "case_id": "forbidden_term",
+          "output": "雨対策の傘を持ちましょう。",
+          "passed": false,
+          "passed_checks": 4,
+          "total_checks": 5,
+          "failures": [
+            "forbidden term present: 雨"
+          ]
+        },
+        {
+          "case_id": "json_only",
+          "output": "```json\n{\n  \"状態\": \"正常\"\n}\n```",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "invalid JSON output"
+          ]
+        }
+      ],
+      "preset": "default",
+      "generation_profile": "lfm2_5_jp",
+      "temperature": 0.1,
+      "model": "sanpoloid-local",
+      "elapsed_seconds": 1.159
+    }
+  ]
+}

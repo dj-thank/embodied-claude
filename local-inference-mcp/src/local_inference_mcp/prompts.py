@@ -22,7 +22,6 @@ _PRESETS = {
     ),
 }
 
-
 def available_prompt_presets() -> tuple[str, ...]:
     """Return stable preset names exposed through the MCP schema and CLI."""
     return tuple(_PRESETS)

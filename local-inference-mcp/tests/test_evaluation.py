@@ -155,6 +155,7 @@ def test_runner_uses_public_completion_interface_and_scores_each_variant() -> No
             "prompt": "Return OK",
             "system_prompt": "",
             "preset": "default",
+            "generation_profile": "runtime_default",
             "temperature": 0.1,
             "max_tokens": 8,
         },
@@ -162,7 +163,38 @@ def test_runner_uses_public_completion_interface_and_scores_each_variant() -> No
             "prompt": "Return OK",
             "system_prompt": "",
             "preset": "strict",
+            "generation_profile": "runtime_default",
             "temperature": 0.1,
             "max_tokens": 8,
         },
+    ]
+
+
+def test_runner_compares_generation_profiles_as_separate_evidence_variants() -> None:
+    suite = EvaluationSuite(
+        name="unit",
+        cases=(
+            EvaluationCase(
+                case_id="one",
+                prompt="Return OK",
+                expectation=EvaluationExpectation(exact="OK"),
+                max_tokens=8,
+            ),
+        ),
+    )
+    inference = PresetAwareInference(calls=[])
+
+    result = EvaluationRunner(inference, suite).run(
+        presets=("strict",),
+        generation_profiles=("runtime_default", "lfm2_5_jp"),
+        temperature=0.1,
+    )
+
+    assert [variant["generation_profile"] for variant in result["variants"]] == [
+        "runtime_default",
+        "lfm2_5_jp",
+    ]
+    assert [call["generation_profile"] for call in inference.calls] == [
+        "runtime_default",
+        "lfm2_5_jp",
     ]

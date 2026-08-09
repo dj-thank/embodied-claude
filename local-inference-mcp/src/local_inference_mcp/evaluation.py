@@ -14,6 +14,7 @@ from typing import Any, Protocol
 from .config import InferenceConfig
 from .inference import InferenceResult, LocalInference, UrllibJsonTransport
 from .prompts import available_prompt_presets
+from .sampling import available_generation_profiles
 
 
 @dataclass(frozen=True)
@@ -140,38 +141,52 @@ class EvaluationRunner:
         self._inference = inference
         self._suite = suite
 
-    def run(self, *, presets: Sequence[str], temperature: float = 0.1) -> dict[str, Any]:
+    def run(
+        self,
+        *,
+        presets: Sequence[str],
+        generation_profiles: Sequence[str] = ("runtime_default",),
+        temperature: float = 0.1,
+    ) -> dict[str, Any]:
         valid_presets = set(available_prompt_presets())
         if not presets or any(preset not in valid_presets for preset in presets):
             raise ValueError("presets must contain known prompt preset names")
+        valid_profiles = set(available_generation_profiles())
+        if not generation_profiles or any(
+            profile not in valid_profiles for profile in generation_profiles
+        ):
+            raise ValueError("generation_profiles must contain known profile names")
         variants: list[dict[str, Any]] = []
         for preset in presets:
-            outputs: dict[str, str] = {}
-            models: list[str] = []
-            started = time.perf_counter()
-            for case in self._suite.cases:
-                completion_arguments: dict[str, Any] = {
-                    "system_prompt": case.system_prompt,
-                    "preset": preset,
-                    "temperature": temperature,
-                    "max_tokens": case.max_tokens,
-                }
-                if preset == "json" and case.json_schema is not None:
-                    completion_arguments["json_schema"] = case.json_schema
-                result = self._inference.complete(case.prompt, **completion_arguments)
-                outputs[case.case_id] = result.text
-                models.append(result.model)
-            report = self._suite.evaluate(outputs)
-            variant = report.as_dict()
-            variant.update(
-                {
-                    "preset": preset,
-                    "temperature": temperature,
-                    "model": models[0] if len(set(models)) == 1 else models,
-                    "elapsed_seconds": round(time.perf_counter() - started, 3),
-                }
-            )
-            variants.append(variant)
+            for generation_profile in generation_profiles:
+                outputs: dict[str, str] = {}
+                models: list[str] = []
+                started = time.perf_counter()
+                for case in self._suite.cases:
+                    completion_arguments: dict[str, Any] = {
+                        "system_prompt": case.system_prompt,
+                        "preset": preset,
+                        "generation_profile": generation_profile,
+                        "temperature": temperature,
+                        "max_tokens": case.max_tokens,
+                    }
+                    if preset == "json" and case.json_schema is not None:
+                        completion_arguments["json_schema"] = case.json_schema
+                    result = self._inference.complete(case.prompt, **completion_arguments)
+                    outputs[case.case_id] = result.text
+                    models.append(result.model)
+                report = self._suite.evaluate(outputs)
+                variant = report.as_dict()
+                variant.update(
+                    {
+                        "preset": preset,
+                        "generation_profile": generation_profile,
+                        "temperature": temperature,
+                        "model": models[0] if len(set(models)) == 1 else models,
+                        "elapsed_seconds": round(time.perf_counter() - started, 3),
+                    }
+                )
+                variants.append(variant)
         return {"suite": self._suite.name, "variants": variants}
 
 
@@ -255,6 +270,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument(
+        "--generation-profile",
+        action="append",
+        dest="generation_profiles",
+        choices=available_generation_profiles(),
+        help="sampling profile to evaluate; repeat to compare (default: runtime_default)",
+    )
+    parser.add_argument(
         "--case",
         action="append",
         dest="cases",
@@ -269,6 +291,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         suite = suite.select(tuple(arguments.cases))
     result = EvaluationRunner(inference, suite).run(
         presets=presets,
+        generation_profiles=tuple(
+            arguments.generation_profiles or ("runtime_default",)
+        ),
         temperature=arguments.temperature,
     )
     encoded = json.dumps(result, ensure_ascii=False, indent=2) + "\n"

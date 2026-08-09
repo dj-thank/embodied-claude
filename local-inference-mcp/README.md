@@ -64,9 +64,15 @@ llama.cppのJSON Schema制約を要求し、任意の`json_schema`（最大16 Ki
 ```powershell
 $env:SANPOLOID_LOCAL_LLM_MODEL = "sanpoloid-local"
 uv run local-inference-eval --preset default --preset strict --temperature 0.1
+uv run local-inference-eval --preset default `
+  --generation-profile runtime_default --generation-profile lfm2_5_jp `
+  --temperature 0.1 --output ..\outputs\local-inference-eval-generation-profile.json
 uv run local-inference-eval --preset json --case json_only --temperature 0.1 `
   --output ..\outputs\local-inference-eval.json
 ```
 
-`--preset`と`--case`は繰り返し指定できる。スコアはfixtureへの適合率であり、一般的な日本語能力、
-安全性、長文品質、実運用品質を表すものではない。用途別プリセットは対応するケースだけで評価する。
+`--preset`、`--generation-profile`、`--case`は繰り返し指定できる。`lfm2_5_jp` profileは
+評価時だけ`top_k=50`と`repeat_penalty=1.05`を送る。2026-08-09の同一fixture A/Bでは
+runtime既定値と同じ8/11 checkだったため、MCPの公開parameterや既定値には採用していない。
+スコアはfixtureへの適合率であり、一般的な日本語能力、安全性、長文品質、実運用品質を表さない。
+用途別プリセットは対応するケースだけで評価する。

@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 from .config import InferenceConfig
 from .prompts import PromptPreset, compose_system_prompt
+from .sampling import GenerationProfile, generation_parameters
 
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _MAX_JSON_SCHEMA_BYTES = 16 * 1024
@@ -166,6 +167,7 @@ class LocalInference:
         system_prompt: str = "",
         model: str | None = None,
         preset: PromptPreset = "default",
+        generation_profile: GenerationProfile = "runtime_default",
         json_schema: dict[str, Any] | None = None,
         temperature: float = 0.2,
         max_tokens: int = 512,
@@ -174,6 +176,7 @@ class LocalInference:
         if not isinstance(system_prompt, str):
             raise ValueError("system_prompt must be text")
         composed_system_prompt = compose_system_prompt(preset, system_prompt)
+        sampling_parameters = generation_parameters(generation_profile)
         normalized_json_schema = _validate_json_schema(preset, json_schema)
         self._validate_completion_input(
             prompt=prompt,
@@ -208,6 +211,7 @@ class LocalInference:
             "max_tokens": max_tokens,
             "stream": False,
         }
+        request_body.update(sampling_parameters)
         if preset == "json":
             response_schema = normalized_json_schema or {"type": "object"}
             request_body["response_format"] = {

@@ -159,6 +159,22 @@ def test_strict_preset_adds_explicit_instruction_without_replacing_user_system_p
     }
 
 
+def test_lfm2_5_jp_generation_profile_sends_model_card_sampling_parameters() -> None:
+    transport = MemoryJsonTransport(
+        [{"choices": [{"message": {"content": "さんぽ日和やで。"}}]}]
+    )
+    inference = LocalInference(
+        InferenceConfig.from_env({"SANPOLOID_LOCAL_LLM_MODEL": "local-jp"}),
+        transport,
+    )
+
+    inference.complete("短く答えて", generation_profile="lfm2_5_jp")
+
+    request_body = transport.requests[0]["body"]
+    assert request_body["top_k"] == 50
+    assert request_body["repeat_penalty"] == 1.05
+
+
 def test_unknown_prompt_preset_is_rejected_before_transport() -> None:
     transport = MemoryJsonTransport([])
     inference = LocalInference(
@@ -168,6 +184,8 @@ def test_unknown_prompt_preset_is_rejected_before_transport() -> None:
 
     with pytest.raises(ValueError, match="preset"):
         inference.complete("ping", preset="unknown")
+    with pytest.raises(ValueError, match="generation_profile"):
+        inference.complete("ping", generation_profile="unknown")
 
     assert transport.requests == []
 

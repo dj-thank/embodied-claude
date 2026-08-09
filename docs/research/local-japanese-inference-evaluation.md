@@ -31,6 +31,7 @@ llama.cppで同じrequest shapeが動くことは未検証である。
 - prompt preset: `default`、`strict`、`concise`、`json`
 - JSON: `json` preset時だけbackendへJSON Schemaを渡す。schemaは16 KiBまで
 - CLI: presetとcaseを繰り返し指定し、JSON evidenceを保存できる
+- generation profile: `runtime_default`と、公式推奨値を送る評価専用`lfm2_5_jp`を同じ条件で比較できる
 - MCP schema: preset候補をenumとして公開する
 
 ## ローカル実測
@@ -50,17 +51,23 @@ JSON専用caseを`json` presetと厳密schemaで再実行すると1 / 1 check、
 `{"状態":"正常"}`と同値のJSONを得た。これは構造化出力ケースのlocal PASSであり、自由文全般の
 改善、複雑schema、連続負荷、llama.cpp互換性、他PCでの再現性を証明しない。
 
+公式推奨sampling値のA/Bでは、`runtime_default`と`lfm2_5_jp`（`top_k=50`、
+`repeat_penalty=1.05`）がともに8 / 11 check、score 0.727273だった。経過時間はそれぞれ
+1.358秒と1.159秒だが、各1回のため性能差は主張しない。品質改善が無かったため、推奨profileは
+評価CLI内だけに留め、MCPの公開parameterと既定値は増やさなかった。
+
 証拠artifact:
 
 - `outputs/local-inference-eval-20260809.json`: 3 presetの全5ケース比較
 - `outputs/local-inference-eval-json-schema-20260809.json`: JSON専用caseのschema制約結果
+- `outputs/local-inference-eval-generation-profile-20260809.json`: sampling profile A/B、SHA-256 `C7252A13DA9DBE62CB08341DFDE131E850FB81CB097FC03DC82C637C83BCDCB5`
 
 ## 次の判断
 
 1. `default`を維持し、`strict`と`concise`はcallerが用途に合わせて明示選択する。
 2. 機械消費する出力は文章指示だけに頼らず、`json`と最小JSON Schemaを使う。
-3. 公式推奨の`top_k=50`、`repetition_penalty=1.05`は両runtimeで扱えるが、MCP既定値へ入れる前に
-   同じfixtureでA/Bし、モデル固有設定として分離する。
+3. 公式推奨の`top_k=50`、`repeat_penalty=1.05`は同じfixtureで改善しなかったため、既定値や
+   公開MCP parameterへ昇格させず、評価専用profileとしてモデル固有に分離する。
 4. fixtureは実際のSanpoloidタスク失敗から追加し、スコアのための問題作りにしない。
 5. fine-tuningは、prompt/schemaで解けない反復失敗が十分に集まり、学習・検証データを分離できて
    から行う。
