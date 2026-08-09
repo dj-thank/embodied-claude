@@ -1,0 +1,64 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "sanpoloid-body-signal",
+  "display_name": "Sanpoloid Body Signal",
+  "version": "0.1.0",
+  "description": "Read-only body-temperature and Japan-time senses for Sanpoloid",
+  "long_description": "A network-free local MCP server that lets Sanpoloid inspect available computer temperature sensors and the current Japan time. Temperature results include a text fallback and an MCP App dashboard. The server does not change hardware settings or send sensor data over the network.",
+  "author": {
+    "name": "dj-thank"
+  },
+  "icon": "assets/body-signal-512.png",
+  "icons": [
+    {
+      "src": "assets/body-signal-512.png",
+      "size": "512x512"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dj-thank/embodied-claude.git"
+  },
+  "server": {
+    "type": "uv",
+    "entry_point": "mcpb_entrypoint.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "python",
+        "${__dirname}/mcpb_entrypoint.py"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "get_system_temperature",
+      "description": "Get the current system temperature (CPU, GPU, etc.). This is your sense of body temperature - how hot or cold your 'body' (the computer) is running. Use this to feel your own physical state."
+    },
+    {
+      "name": "get_current_time",
+      "description": "Get the current date and time. Use this to know what time it is, check if it's morning/afternoon/night, or when you want to be aware of the time."
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.12,<4"
+    }
+  },
+  "keywords": [
+    "sanpoloid",
+    "temperature",
+    "body-signal",
+    "mcp-app",
+    "read-only"
+  ]
+}

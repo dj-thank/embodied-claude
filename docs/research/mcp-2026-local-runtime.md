@@ -100,6 +100,17 @@ Full profileにlocal inference選択を追加したWindows one-file installerも
 `49685FDD4CDB27E1A432BBC5A5861C05224B8AB883A8C128B67BA9E08C86F694`である。
 同一pathのone-file親子2 processが起動後も生存することを確認し、確認後は両方を終了して残存0とした。
 
+### MCPB UV pilot 実装状況（2026-08-09）
+
+SDK v2とMCP Appを持つSystem Temperatureをmanifest v0.4のUV bundleへpackした。typed registryと
+manifestの2 toolを自動照合し、bundle root entrypoint、development file除外、lock保持を試験する。
+公開MCPB CLI 2.1.2のvalidate/packがPASSし、別directoryへ展開したbundleからUVで依存関係を構築後、
+modern/legacy clientの2経路でtools、Body Signal resource、temperature callを確認した。
+
+icon入り配布archiveは約143 KiBだが、初回隔離venvの論理file sizeは約51.5 MBだったため、install後も
+PyInstallerより必ず軽いとは主張しない。Claude Desktop install、署名、別PC、offline、通常ユーザー権限は
+未検証で、既存installerはfallbackとして残す。詳細は`docs/research/mcpb-uv-pilot.md`に分離した。
+
 ## 一次情報
 
 - [MCP 2026-07-28 release](https://blog.modelcontextprotocol.io/posts/2026-07-28/)

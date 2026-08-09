@@ -1,6 +1,8 @@
 """Hardware-free tests for temperature and clock helpers."""
 
+import json
 import sys
+from pathlib import Path
 
 import pytest
 from mcp import Client, StdioServerParameters, stdio_client
@@ -8,6 +10,8 @@ from mcp.client import advertise
 from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 
 from system_temperature_mcp import server
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_interpret_temperature_handles_empty_sensor_list() -> None:
@@ -153,3 +157,62 @@ async def test_temperature_tool_exposes_a_network_free_mcp_app(monkeypatch) -> N
             }
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_mcpb_manifest_matches_the_typed_tool_registry() -> None:
+    manifest = json.loads((PACKAGE_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    tools = await server.mcp.list_tools()
+
+    assert manifest["manifest_version"] == "0.4"
+    assert manifest["server"] == {
+        "type": "uv",
+        "entry_point": "mcpb_entrypoint.py",
+        "mcp_config": {
+            "command": "uv",
+            "args": [
+                "run",
+                "--directory",
+                "${__dirname}",
+                "python",
+                "${__dirname}/mcpb_entrypoint.py",
+            ],
+        },
+    }
+    assert manifest["compatibility"]["runtimes"]["python"] == ">=3.12,<4"
+    assert manifest["icon"] == "assets/body-signal-512.png"
+    assert manifest["icons"] == [
+        {"src": "assets/body-signal-512.png", "size": "512x512"}
+    ]
+    icon = PACKAGE_ROOT / manifest["icon"]
+    assert icon.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert manifest["tools"] == [
+        {"name": tool.name, "description": tool.description} for tool in tools
+    ]
+    assert (PACKAGE_ROOT / manifest["server"]["entry_point"]).is_file()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_mcpb_entrypoint_exposes_the_same_stdio_contract(mode: str) -> None:
+    parameters = StdioServerParameters(
+        command=sys.executable,
+        args=[str(PACKAGE_ROOT / "mcpb_entrypoint.py")],
+    )
+
+    async with Client(stdio_client(parameters), mode=mode) as client:
+        tools = await client.list_tools()
+
+    assert [tool.name for tool in tools.tools] == [
+        "get_system_temperature",
+        "get_current_time",
+    ]
+
+
+def test_mcpbignore_excludes_development_weight_but_keeps_the_uv_lock() -> None:
+    patterns = (PACKAGE_ROOT / ".mcpbignore").read_text(encoding="utf-8").splitlines()
+
+    assert "tests/" in patterns
+    assert ".venv/" in patterns
+    assert "dist/" in patterns
+    assert "uv.lock" not in patterns

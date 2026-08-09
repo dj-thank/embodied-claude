@@ -49,6 +49,7 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
+/work/
 
 # ChromaDB test data
 :memory:/
