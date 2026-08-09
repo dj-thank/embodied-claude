@@ -121,9 +121,10 @@ class InferenceResult:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    parsed_json: Any | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "text": self.text,
             "model": self.model,
             "usage": {
@@ -132,6 +133,9 @@ class InferenceResult:
                 "total_tokens": self.total_tokens,
             },
         }
+        if self.parsed_json is not None:
+            result["parsed_json"] = self.parsed_json
+        return result
 
 
 class LocalInference:
@@ -231,6 +235,14 @@ class LocalInference:
             body=request_body,
         )
         text = _completion_text(response)
+        parsed_json: Any | None = None
+        if preset == "json":
+            try:
+                parsed_json = json.loads(text)
+            except json.JSONDecodeError as error:
+                raise InferenceProtocolError(
+                    "local inference endpoint violated the requested JSON constraint"
+                ) from error
         response_model = response.get("model")
         normalized_model = (
             response_model.strip()
@@ -245,6 +257,7 @@ class LocalInference:
             prompt_tokens=_optional_int(usage_mapping.get("prompt_tokens")),
             completion_tokens=_optional_int(usage_mapping.get("completion_tokens")),
             total_tokens=_optional_int(usage_mapping.get("total_tokens")),
+            parsed_json=parsed_json,
         )
 
     def _list_models(self) -> tuple[str, ...]:

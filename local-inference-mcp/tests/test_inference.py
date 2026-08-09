@@ -229,6 +229,8 @@ def test_json_preset_requests_backend_level_json_object_constraint() -> None:
     )
 
     assert result.text == '{"状態":"正常"}'
+    assert result.parsed_json == {"状態": "正常"}
+    assert result.as_dict()["parsed_json"] == {"状態": "正常"}
     assert transport.requests[0]["body"]["response_format"] == {
         "type": "json_schema",
         "schema": {
@@ -264,6 +266,18 @@ def test_json_schema_requires_json_preset_and_is_size_bounded() -> None:
             preset="json",
             json_schema={"description": "x" * 20_000},
         )
+
+
+def test_json_preset_rejects_backend_output_that_violates_the_constraint() -> None:
+    inference = LocalInference(
+        InferenceConfig.from_env({"SANPOLOID_LOCAL_LLM_MODEL": "local-jp"}),
+        MemoryJsonTransport(
+            [{"choices": [{"message": {"content": "```json\n{}\n```"}}]}]
+        ),
+    )
+
+    with pytest.raises(InferenceProtocolError, match="JSON constraint"):
+        inference.complete("JSONで返して", preset="json")
 
 
 def test_multiple_discovered_models_require_an_explicit_choice() -> None:

@@ -54,7 +54,9 @@ uv run local-inference-mcp
 `ask_local_model`の`preset`は`default`、`strict`、`concise`、`json`から選択する。
 プリセットはモデル自体を変更せず、用途別のsystem instructionを加える。`json`はLM Studioと
 llama.cppのJSON Schema制約を要求し、任意の`json_schema`（最大16 KiB）も渡せる。schemaを
-使わない場合でもJSON objectを要求する。実runtimeの対応状況はバージョンごとに確認すること。
+使わない場合でもJSON objectを要求する。成功時は元の`text`に加えて`parsed_json`をstructured
+contentへ返し、backendが制約に反して不正JSONを返した場合はprotocol errorにする。実runtimeの
+対応状況はバージョンごとに確認すること。
 
 ## 日本語コア評価
 

@@ -30,6 +30,7 @@ llama.cppで同じrequest shapeが動くことは未検証である。
 - score: exact、必須語、禁止語、文字数、JSON構造の11個の決定的checkのmicro average
 - prompt preset: `default`、`strict`、`concise`、`json`
 - JSON: `json` preset時だけbackendへJSON Schemaを渡す。schemaは16 KiBまで
+- JSON result: 有効JSONを`parsed_json`としてMCP structured contentへ返し、不正JSONはprotocol errorにする
 - CLI: presetとcaseを繰り返し指定し、JSON evidenceを保存できる
 - generation profile: `runtime_default`と、公式推奨値を送る評価専用`lfm2_5_jp`を同じ条件で比較できる
 - MCP schema: preset候補をenumとして公開する
@@ -55,6 +56,11 @@ JSON専用caseを`json` presetと厳密schemaで再実行すると1 / 1 check、
 `repeat_penalty=1.05`）がともに8 / 11 check、score 0.727273だった。経過時間はそれぞれ
 1.358秒と1.159秒だが、各1回のため性能差は主張しない。品質改善が無かったため、推奨profileは
 評価CLI内だけに留め、MCPの公開parameterと既定値は増やさなかった。
+
+その後、JSON Schema経路の実用性を上げるため、成功応答を再parseした`parsed_json`をMCP結果へ
+追加した。同じLM Studioモデルへの実MCP stdio callで`{"状態":"正常"}`と同値のstructured
+contentを確認した。入力はPowerShellの文字コード影響を避けるためUnicode escapeで固定した。
+これは当該schema・LM Studio・1回のcallのPASSであり、複雑schemaやllama.cpp互換性の証明ではない。
 
 証拠artifact:
 

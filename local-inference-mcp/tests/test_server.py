@@ -96,3 +96,24 @@ async def test_stdio_process_exposes_the_same_interface(mode: str) -> None:
         "get_local_inference_status",
         "ask_local_model",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_json_completion_exposes_parsed_structured_content(mode: str) -> None:
+    class JsonInference:
+        def complete(self, prompt: str, **kwargs) -> InferenceResult:
+            return InferenceResult(
+                text='{"状態":"正常"}',
+                model="local-jp",
+                parsed_json={"状態": "正常"},
+            )
+
+    async with Client(create_server(lambda: JsonInference()), mode=mode) as client:
+        result = await client.call_tool(
+            "ask_local_model",
+            {"prompt": "状態を返して", "preset": "json"},
+        )
+
+    assert result.is_error is False
+    assert result.structured_content["parsed_json"] == {"状態": "正常"}
