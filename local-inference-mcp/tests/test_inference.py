@@ -132,6 +132,122 @@ def test_configured_model_skips_model_discovery_and_sends_optional_token() -> No
     assert transport.requests[0]["headers"]["Authorization"] == "Bearer local-secret"
 
 
+def test_strict_preset_adds_explicit_instruction_without_replacing_user_system_prompt() -> None:
+    transport = MemoryJsonTransport(
+        [{"choices": [{"message": {"content": "さんぽ日和やで。"}}]}]
+    )
+    inference = LocalInference(
+        InferenceConfig.from_env({"SANPOLOID_LOCAL_LLM_MODEL": "local-jp"}),
+        transport,
+    )
+
+    result = inference.complete(
+        "『さんぽ日和やで。』だけを返してください。",
+        system_prompt="日本語で答えてください。",
+        preset="strict",
+    )
+
+    assert result.text == "さんぽ日和やで。"
+    messages = transport.requests[0]["body"]["messages"]
+    assert messages[0]["role"] == "system"
+    assert "出力形式" in messages[0]["content"]
+    assert "前置き" in messages[0]["content"]
+    assert messages[0]["content"].endswith("日本語で答えてください。")
+    assert messages[1] == {
+        "role": "user",
+        "content": "『さんぽ日和やで。』だけを返してください。",
+    }
+
+
+def test_unknown_prompt_preset_is_rejected_before_transport() -> None:
+    transport = MemoryJsonTransport([])
+    inference = LocalInference(
+        InferenceConfig.from_env({"SANPOLOID_LOCAL_LLM_MODEL": "local-jp"}),
+        transport,
+    )
+
+    with pytest.raises(ValueError, match="preset"):
+        inference.complete("ping", preset="unknown")
+
+    assert transport.requests == []
+
+
+def test_prompt_bound_includes_preset_instruction() -> None:
+    transport = MemoryJsonTransport([])
+    inference = LocalInference(
+        InferenceConfig.from_env(
+            {
+                "SANPOLOID_LOCAL_LLM_MODEL": "local-jp",
+                "SANPOLOID_LOCAL_LLM_MAX_PROMPT_CHARS": "20",
+            }
+        ),
+        transport,
+    )
+
+    with pytest.raises(ValueError, match="prompt is too long"):
+        inference.complete("ping", preset="strict")
+
+    assert transport.requests == []
+
+
+def test_json_preset_requests_backend_level_json_object_constraint() -> None:
+    transport = MemoryJsonTransport(
+        [{"choices": [{"message": {"content": '{"状態":"正常"}'}}]}]
+    )
+    inference = LocalInference(
+        InferenceConfig.from_env({"SANPOLOID_LOCAL_LLM_MODEL": "local-jp"}),
+        transport,
+    )
+
+    result = inference.complete(
+        "状態をJSONで返して",
+        preset="json",
+        json_schema={
+            "type": "object",
+            "properties": {"状態": {"type": "string", "const": "正常"}},
+            "required": ["状態"],
+            "additionalProperties": False,
+        },
+    )
+
+    assert result.text == '{"状態":"正常"}'
+    assert transport.requests[0]["body"]["response_format"] == {
+        "type": "json_schema",
+        "schema": {
+            "type": "object",
+            "properties": {"状態": {"type": "string", "const": "正常"}},
+            "required": ["状態"],
+            "additionalProperties": False,
+        },
+        "json_schema": {
+            "name": "sanpoloid_response",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"状態": {"type": "string", "const": "正常"}},
+                "required": ["状態"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def test_json_schema_requires_json_preset_and_is_size_bounded() -> None:
+    inference = LocalInference(
+        InferenceConfig.from_env({"SANPOLOID_LOCAL_LLM_MODEL": "local-jp"}),
+        MemoryJsonTransport([]),
+    )
+
+    with pytest.raises(ValueError, match="json preset"):
+        inference.complete("ping", json_schema={"type": "object"})
+    with pytest.raises(ValueError, match="json_schema is too large"):
+        inference.complete(
+            "ping",
+            preset="json",
+            json_schema={"description": "x" * 20_000},
+        )
+
+
 def test_multiple_discovered_models_require_an_explicit_choice() -> None:
     transport = MemoryJsonTransport(
         [{"data": [{"id": "model-a"}, {"id": "model-b"}]}]
@@ -211,4 +327,40 @@ def test_http_transport_does_not_follow_redirects() -> None:
         server.server_close()
 
     assert status["available"] is False
-    assert "HTTPError" in status["error"]
+    assert "HTTP 302" in status["error"]
+
+
+def test_http_client_error_is_reported_as_protocol_rejection_not_unavailability() -> None:
+    class RejectingHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:  # noqa: N802 - stdlib handler contract
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":{"message":"may echo private prompt"}}')
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), RejectingHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        inference = LocalInference(
+            InferenceConfig.from_env(
+                {
+                    "SANPOLOID_LOCAL_LLM_BASE_URL": (
+                        f"http://127.0.0.1:{server.server_port}/v1"
+                    ),
+                    "SANPOLOID_LOCAL_LLM_MODEL": "model",
+                }
+            ),
+            UrllibJsonTransport(),
+        )
+        with pytest.raises(InferenceProtocolError, match="HTTP 400") as captured:
+            inference.complete("private prompt")
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+    assert "private prompt" not in str(captured.value)

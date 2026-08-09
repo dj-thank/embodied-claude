@@ -9,6 +9,7 @@ dependencies = [
 
 [project.scripts]
 local-inference-mcp = "local_inference_mcp.server:main"
+local-inference-eval = "local_inference_mcp.evaluation:main"
 
 [build-system]
 requires = ["hatchling"]

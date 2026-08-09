@@ -50,3 +50,23 @@ uv run local-inference-mcp
 
 - `get_local_inference_status`: endpointとmodel一覧を確認する。serverやmodelは起動しない
 - `ask_local_model`: boundedな非streaming text completionを実行する
+
+`ask_local_model`の`preset`は`default`、`strict`、`concise`、`json`から選択する。
+プリセットはモデル自体を変更せず、用途別のsystem instructionを加える。`json`はLM Studioと
+llama.cppのJSON Schema制約を要求し、任意の`json_schema`（最大16 KiB）も渡せる。schemaを
+使わない場合でもJSON objectを要求する。実runtimeの対応状況はバージョンごとに確認すること。
+
+## 日本語コア評価
+
+モデルやprompt変更前後を同じ条件で比べるため、5件の小型fixtureを同梱する。採点はexact、
+必須語、禁止語、文字数、JSON構造の決定的な検査だけで行い、別LLMをjudgeに使わない。
+
+```powershell
+$env:SANPOLOID_LOCAL_LLM_MODEL = "sanpoloid-local"
+uv run local-inference-eval --preset default --preset strict --temperature 0.1
+uv run local-inference-eval --preset json --case json_only --temperature 0.1 `
+  --output ..\outputs\local-inference-eval.json
+```
+
+`--preset`と`--case`は繰り返し指定できる。スコアはfixtureへの適合率であり、一般的な日本語能力、
+安全性、長文品質、実運用品質を表すものではない。用途別プリセットは対応するケースだけで評価する。

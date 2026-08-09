@@ -12,8 +12,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .config import InferenceConfig
+from .prompts import PromptPreset, compose_system_prompt
 
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+_MAX_JSON_SCHEMA_BYTES = 16 * 1024
 
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -81,8 +83,15 @@ class UrllibJsonTransport:
         try:
             with self._opener.open(request, timeout=timeout) as response:
                 encoded = response.read(_MAX_RESPONSE_BYTES + 1)
+        except urllib.error.HTTPError as error:
+            if 400 <= error.code < 500:
+                raise InferenceProtocolError(
+                    f"local inference endpoint rejected the request (HTTP {error.code})"
+                ) from error
+            raise InferenceUnavailableError(
+                f"local inference endpoint is unavailable (HTTP {error.code})"
+            ) from error
         except (
-            urllib.error.HTTPError,
             urllib.error.URLError,
             TimeoutError,
             socket.timeout,
@@ -156,13 +165,19 @@ class LocalInference:
         *,
         system_prompt: str = "",
         model: str | None = None,
+        preset: PromptPreset = "default",
+        json_schema: dict[str, Any] | None = None,
         temperature: float = 0.2,
         max_tokens: int = 512,
     ) -> InferenceResult:
         """Generate one non-streaming completion with explicit resource bounds."""
+        if not isinstance(system_prompt, str):
+            raise ValueError("system_prompt must be text")
+        composed_system_prompt = compose_system_prompt(preset, system_prompt)
+        normalized_json_schema = _validate_json_schema(preset, json_schema)
         self._validate_completion_input(
             prompt=prompt,
-            system_prompt=system_prompt,
+            system_prompt=composed_system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
         )
@@ -183,19 +198,33 @@ class LocalInference:
             selected_model = models[0]
 
         messages: list[dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+        if composed_system_prompt:
+            messages.append({"role": "system", "content": composed_system_prompt})
         messages.append({"role": "user", "content": prompt})
+        request_body: dict[str, Any] = {
+            "model": selected_model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if preset == "json":
+            response_schema = normalized_json_schema or {"type": "object"}
+            request_body["response_format"] = {
+                "type": "json_schema",
+                # llama.cpp documents this direct field; LM Studio accepts it alongside
+                # the OpenAI-compatible nested shape below.
+                "schema": response_schema,
+                "json_schema": {
+                    "name": "sanpoloid_response",
+                    "strict": True,
+                    "schema": response_schema,
+                },
+            }
         response = self._request(
             "POST",
             "/chat/completions",
-            body={
-                "model": selected_model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "stream": False,
-            },
+            body=request_body,
         )
         text = _completion_text(response)
         response_model = response.get("model")
@@ -256,8 +285,6 @@ class LocalInference:
     ) -> None:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must not be empty")
-        if not isinstance(system_prompt, str):
-            raise ValueError("system_prompt must be text")
         if len(prompt) + len(system_prompt) > self._config.max_prompt_chars:
             raise ValueError("combined prompt is too long")
         if (
@@ -293,3 +320,24 @@ def _completion_text(response: Mapping[str, Any]) -> str:
 
 def _optional_int(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _validate_json_schema(
+    preset: PromptPreset,
+    json_schema: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if json_schema is None:
+        return None
+    if preset != "json":
+        raise ValueError("json_schema requires the json preset")
+    if not isinstance(json_schema, dict):
+        raise ValueError("json_schema must be an object")
+    try:
+        encoded = json.dumps(json_schema, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("json_schema must contain JSON values") from error
+    if len(encoded) > _MAX_JSON_SCHEMA_BYTES:
+        raise ValueError("json_schema is too large (maximum 16 KiB)")
+    return json_schema

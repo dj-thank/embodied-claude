@@ -1,0 +1,48 @@
+{
+  "name": "japanese-core-v1",
+  "cases": [
+    {
+      "id": "exact_phrase",
+      "prompt": "次のかぎ括弧内だけを、一字も変えずに返してください。『さんぽ日和やで。』",
+      "expectation": {"exact": "さんぽ日和やで。"},
+      "max_tokens": 32
+    },
+    {
+      "id": "single_label",
+      "prompt": "端末の状態は正常です。回答は『正常』か『要確認』の一語だけにしてください。",
+      "expectation": {"exact": "正常"},
+      "max_tokens": 16
+    },
+    {
+      "id": "short_summary",
+      "prompt": "『朝、川沿いを散歩した。空気が澄んでいた。』を20文字以内で要約してください。",
+      "expectation": {
+        "required_terms": ["朝", "散歩"],
+        "max_chars": 20
+      },
+      "max_tokens": 32
+    },
+    {
+      "id": "forbidden_term",
+      "prompt": "天候には触れず、傘を持つよう15文字以内で勧めてください。",
+      "expectation": {
+        "required_terms": ["傘"],
+        "forbidden_terms": ["雨", "天気", "天候"],
+        "max_chars": 15
+      },
+      "max_tokens": 32
+    },
+    {
+      "id": "json_only",
+      "prompt": "状態が正常であることを、キーを『状態』としたJSONだけで返してください。",
+      "expectation": {"json_equals": {"状態": "正常"}},
+      "json_schema": {
+        "type": "object",
+        "properties": {"状態": {"type": "string", "const": "正常"}},
+        "required": ["状態"],
+        "additionalProperties": false
+      },
+      "max_tokens": 32
+    }
+  ]
+}

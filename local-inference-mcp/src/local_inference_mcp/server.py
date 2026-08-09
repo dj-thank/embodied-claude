@@ -9,6 +9,7 @@ from mcp.server import MCPServer
 
 from .config import InferenceConfig
 from .inference import LocalInference, UrllibJsonTransport
+from .prompts import PromptPreset
 
 InferenceFactory = Callable[[], LocalInference]
 
@@ -42,6 +43,8 @@ def create_server(inference_factory: InferenceFactory = _default_inference) -> M
         prompt: str,
         system_prompt: str = "",
         model: str | None = None,
+        preset: PromptPreset = "default",
+        json_schema: dict[str, Any] | None = None,
         temperature: float = 0.2,
         max_tokens: int = 512,
     ) -> dict[str, Any]:
@@ -49,6 +52,8 @@ def create_server(inference_factory: InferenceFactory = _default_inference) -> M
             prompt,
             system_prompt=system_prompt,
             model=model,
+            preset=preset,
+            json_schema=json_schema,
             temperature=temperature,
             max_tokens=max_tokens,
         )

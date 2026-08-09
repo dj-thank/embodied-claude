@@ -25,6 +25,8 @@ class StubInference:
         assert kwargs == {
             "system_prompt": "日本語で答える",
             "model": None,
+            "preset": "strict",
+            "json_schema": None,
             "temperature": 0.2,
             "max_tokens": 64,
         }
@@ -50,6 +52,7 @@ async def test_server_exposes_a_small_typed_interface_in_all_client_modes(mode: 
             {
                 "prompt": "短く挨拶して",
                 "system_prompt": "日本語で答える",
+                "preset": "strict",
                 "temperature": 0.2,
                 "max_tokens": 64,
             },
@@ -58,6 +61,13 @@ async def test_server_exposes_a_small_typed_interface_in_all_client_modes(mode: 
     assert [tool.name for tool in tools.tools] == [
         "get_local_inference_status",
         "ask_local_model",
+    ]
+    ask_tool = next(tool for tool in tools.tools if tool.name == "ask_local_model")
+    assert ask_tool.input_schema["properties"]["preset"]["enum"] == [
+        "default",
+        "strict",
+        "concise",
+        "json",
     ]
     assert status.structured_content["models"] == ["local-jp"]
     assert completion.structured_content == {

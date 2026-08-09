@@ -89,6 +89,12 @@ serverをOFFへ戻した。一方、stdio E2Eの出力は「さんぽ」を「�
 制約にも従わなかった。したがって接続・推論経路はPASSだが、日本語品質と指示追従はFAILである。
 長文性能、継続負荷、他環境での速度も未検証である。
 
+この失敗を固定fixtureにした`japanese-core-v1`評価と用途別prompt presetを追加した。
+同一5ケース、公式推奨temperature 0.1の実測では、`default`が8/11 check、`strict`が6/11、
+`concise`が7/11であり、一律なstrict system promptは改善にならなかった。一方、自由生成では
+code fence付きになったJSONを、backendのJSON Schema制約では対象case 1/1 checkへ改善できた。
+詳細、非主張、一次情報は`docs/research/local-japanese-inference-evaluation.md`に分離した。
+
 Full profileにlocal inference選択を追加したWindows one-file installerも再ビルドした。
 最終EXEは36,466,696 bytes、SHA-256
 `49685FDD4CDB27E1A432BBC5A5861C05224B8AB883A8C128B67BA9E08C86F694`である。
