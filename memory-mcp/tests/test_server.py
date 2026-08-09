@@ -7,7 +7,7 @@ import pytest
 from mcp import Client
 
 import memory_mcp.server as server_module
-from memory_mcp.config import ServerConfig
+from memory_mcp.config import MemoryConfig, ServerConfig
 from memory_mcp.memory import MemoryStore
 from memory_mcp.server import MemoryMCPServer
 from memory_mcp.types import Memory, MemorySearchResult
@@ -119,6 +119,38 @@ async def test_search_memories_records_access_through_mcp(
     updated = await memory_store.get_by_id(memory.id)
     assert updated is not None
     assert updated.access_count == 1
+
+
+@pytest.mark.asyncio
+async def test_list_recent_memories_filters_by_public_category_filter_argument(
+    tmp_path,
+) -> None:
+    """The public category_filter argument must reach the store unchanged."""
+    store = MemoryStore(
+        MemoryConfig(
+            db_path=str(tmp_path / "recent-filter.db"),
+            collection_name="recent_filter",
+            backend="sqlite",
+        )
+    )
+    await store.connect()
+    try:
+        await store.save(content="technical-only-memory", category="technical")
+        await store.save(content="daily-only-memory", category="daily")
+        server = MemoryMCPServer()
+        server._memory_store = store
+
+        result = await call_tool(
+            server,
+            "list_recent_memories",
+            {"category_filter": "technical"},
+        )
+
+        assert result.is_error is False
+        assert "technical-only-memory" in result.content[0].text
+        assert "daily-only-memory" not in result.content[0].text
+    finally:
+        await store.disconnect()
 
 
 @pytest.mark.asyncio

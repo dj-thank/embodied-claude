@@ -199,8 +199,8 @@ uv sync --extra chroma
 
 23 toolの公開面はPython MCP SDK v2のtyped registryで生成し、入力範囲をprotocol境界で検証する。
 modern/legacyのin-process Clientと、軽量SQLite backendを使う実stdio subprocessを自動試験している。
-手書きschemaは除去した。実行挙動は安全性を維持するため既存dispatcherを内部互換層として残しており、
-その分解は次段階である。
+手書きschemaと旧routerは除去した。実行挙動は安全性を維持するためprivate dispatcherに集約しており、
+その機能群ごとの分解は次段階である。
 
 #### elevenlabs-t2s-mcp(声)
 
