@@ -10,16 +10,16 @@ import time
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import quote
 
 if TYPE_CHECKING:
     from .go2rtc import Go2RTCProcess
 
 from elevenlabs.client import ElevenLabs
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.server import MCPServer
+from mcp.types import CallToolResult, TextContent
+from pydantic import Field
 
 from .config import ElevenLabsConfig, ServerConfig
 
@@ -343,72 +343,79 @@ def _play_audio(
 class ElevenLabsTTSMCP:
     """MCP server that speaks text using ElevenLabs."""
 
-    def __init__(self) -> None:
+    def __init__(self, client: Any | None = None) -> None:
         self._server_config = ServerConfig.from_env()
         self._config = ElevenLabsConfig.from_env()
-        self._client = ElevenLabs(api_key=self._config.api_key)
-        self._server = Server(self._server_config.name)
+        self._client = (
+            client if client is not None else ElevenLabs(api_key=self._config.api_key)
+        )
+        self.mcp = MCPServer(
+            self._server_config.name,
+            version=self._server_config.version,
+        )
         self._go2rtc: "Go2RTCProcess | None" = None
         self._setup_handlers()
 
     def _setup_handlers(self) -> None:
-        @self._server.list_tools()
-        async def list_tools() -> list[Tool]:
-            return [
-                Tool(
-                    name="say",
-                    description="Speak text out loud using ElevenLabs TTS. Use this when you want to say something aloud.",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "text": {
-                                "type": "string",
-                                "description": "Text to speak",
-                            },
-                            "voice_id": {
-                                "type": "string",
-                                "description": "Override voice ID (optional)",
-                            },
-                            "model_id": {
-                                "type": "string",
-                                "description": "Override model ID (optional)",
-                            },
-                            "output_format": {
-                                "type": "string",
-                                "description": "Override output format (optional)",
-                            },
-                            "play_audio": {
-                                "type": "boolean",
-                                "description": "Play audio on this machine (default: true)",
-                                "default": True,
-                            },
-                            "speaker": {
-                                "type": "string",
-                                "description": "Where to play: 'camera' (camera speaker only), 'local' (PC only), 'both' (default if go2rtc configured)",
-                                "enum": ["camera", "local", "both"],
-                            },
-                        },
-                        "required": ["text"],
-                    },
-                )
-            ]
-
-        @self._server.call_tool()
-        async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-            if name != "say":
-                return [TextContent(type="text", text=f"Unknown tool: {name}")]
-
-            text = (arguments.get("text") or "").strip()
+        @self.mcp.tool(
+            name="say",
+            description=(
+                "Speak text out loud using ElevenLabs TTS. Use this when you want to say "
+                "something aloud."
+            ),
+            structured_output=False,
+        )
+        async def say(
+            text: Annotated[str, Field(description="Text to speak")],
+            voice_id: Annotated[
+                str | None,
+                Field(max_length=256, description="Override voice ID (optional)"),
+            ] = None,
+            model_id: Annotated[
+                str | None,
+                Field(max_length=256, description="Override model ID (optional)"),
+            ] = None,
+            output_format: Annotated[
+                str | None,
+                Field(max_length=128, description="Override output format (optional)"),
+            ] = None,
+            play_audio: Annotated[
+                bool | None,
+                Field(description="Override configured local audio playback (optional)"),
+            ] = None,
+            speaker: Annotated[
+                Literal["camera", "local", "both"] | None,
+                Field(
+                    description=(
+                        "Where to play: camera, local, or both; defaults from go2rtc config"
+                    )
+                ),
+            ] = None,
+        ) -> str | CallToolResult:
+            text = text.strip()
             if not text:
-                return [TextContent(type="text", text="Error: 'text' is required")]
+                return CallToolResult(
+                    isError=True,
+                    content=[TextContent(type="text", text="Error: 'text' is required")],
+                )
 
-            voice_id = arguments.get("voice_id") or self._config.voice_id
-            model_id = arguments.get("model_id") or self._config.model_id
-            output_format = arguments.get("output_format") or self._config.output_format
-            play_audio = arguments.get("play_audio", self._config.play_audio)
-            speaker = arguments.get("speaker") or ("both" if self._config.go2rtc_url else "local")
+            voice_id = voice_id or self._config.voice_id
+            model_id = model_id or self._config.model_id
+            output_format = output_format or self._config.output_format
+            play_audio = self._config.play_audio if play_audio is None else play_audio
+            speaker = speaker or ("both" if self._config.go2rtc_url else "local")
+            if speaker in {"camera", "both"} and not self._config.go2rtc_url:
+                return CallToolResult(
+                    isError=True,
+                    content=[
+                        TextContent(
+                            type="text",
+                            text="Error: camera speaker is not configured",
+                        )
+                    ],
+                )
             use_local = speaker in {"local", "both"}
-            use_camera = speaker in {"camera", "both"} and self._config.go2rtc_url
+            use_camera = speaker in {"camera", "both"}
 
             try:
                 playback_mode = (self._config.playback or "auto").strip().lower()
@@ -489,9 +496,12 @@ class ElevenLabsTTSMCP:
                     f"Playback: {playback}\n"
                     f"Camera: {camera_playback}"
                 )
-                return [TextContent(type="text", text=message)]
+                return message
             except Exception as exc:  # noqa: BLE001 - surface error to caller
-                return [TextContent(type="text", text=f"Error: {exc}")]
+                return CallToolResult(
+                    isError=True,
+                    content=[TextContent(type="text", text=f"Error: {exc}")],
+                )
 
     async def _ensure_go2rtc(self) -> None:
         """Auto-download and start go2rtc if configured."""
@@ -535,12 +545,7 @@ class ElevenLabsTTSMCP:
     async def run(self) -> None:
         try:
             await self._ensure_go2rtc()
-            async with stdio_server() as (read_stream, write_stream):
-                await self._server.run(
-                    read_stream,
-                    write_stream,
-                    self._server.create_initialization_options(),
-                )
+            await self.mcp.run_stdio_async()
         finally:
             if self._go2rtc:
                 self._go2rtc.stop()

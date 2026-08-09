@@ -30,7 +30,7 @@ class TestElevenLabsConfigGo2rtc:
         config = ElevenLabsConfig.from_env()
         assert config.go2rtc_bin is None
         assert config.go2rtc_config is None
-        assert config.go2rtc_auto_start is True
+        assert config.go2rtc_auto_start is False
         assert config.go2rtc_camera_host is None
         assert config.go2rtc_camera_username is None
         assert config.go2rtc_camera_password is None

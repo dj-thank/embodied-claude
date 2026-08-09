@@ -13,8 +13,8 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - 既存5 MCPにlocal-inference MCPを加え、合計53ツールをaction policyが分類している。
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
-- 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature は今回 typed registry へ移行し、残るサーバーは段階移行中である。
-- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、USB Webcam SDK v2実装後のテストは8パッケージ、計441件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
+- 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature、USB Webcam、ElevenLabs TTSはtyped registryへ移行し、残るサーバーは段階移行中である。
+- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、USB Webcam／ElevenLabs TTS SDK v2実装後のテストは8パッケージ、計451件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
 
 ## 一次情報から確認した変更点
 
@@ -76,6 +76,13 @@ Windows実機のcontent-free camera列挙ではindex 0、640x480を検出した�
 modern 3.218秒、legacy 3.244秒だった。周辺画像は取得・保存しておらず、実`see`、他camera、Linux/macOS
 hardware E2Eは未検証である。Python基準を3.12へ上げた結果、lock package recordは46から41になったが、
 disk/runtime memory削減を直接証明する値ではない。
+
+ElevenLabs TTS MCPも1 toolの手書きschemaと名前switch dispatchをtyped decoratorへ置き換えた。
+`speaker`の選択肢とoverride値を生成schemaで制約し、空文字、invalid speaker、provider errorを
+MCP errorとして返す。camera出力が未設定ならprovider生成前に停止する。modern/legacyのin-processと
+stdio subprocess、fake providerによる音声生成と一時directoryへの保存を40件のprovider-free testで確認した。実API、実音声再生、camera speakerは
+未検証である。`GO2RTC_URL`だけでmanaged binary取得・process起動を始めないよう、auto-start既定値を
+falseへ変更し、`GO2RTC_AUTO_START=true`を明示した場合だけ従来の自動起動を行う。
 
 ### MCP Apps pilot 実装状況（2026-08-09）
 

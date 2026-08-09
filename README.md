@@ -207,8 +207,13 @@ cp .env.example .env
 
 go2rtc の自動起動を使う場合、未指定の `GO2RTC_BIN` はversionとSHA-256を
 固定したmanaged binaryとして取得・検証される。任意の既存binaryを使う場合は
-`GO2RTC_BIN` に明示的なpathを設定する。詳細な環境変数は
+`GO2RTC_BIN` に明示的なpathを設定する。自動取得・起動は安全側で無効であり、使用時は
+`GO2RTC_AUTO_START=true`を明示する。詳細な環境変数は
 `elevenlabs-t2s-mcp/.env.example` を参照。
+
+このサーバーはPython MCP SDK v2のtyped registryを使い、modern/legacyのin-processとstdio契約を
+自動試験している。`say`はテキストを外部providerへ送り音声ファイルを作るため、action policyでは
+`EXTERNAL_SPEECH`として呼び出しごとの確認対象になる。
 
 #### system-temperature-mcp(体温感覚)
 
@@ -220,7 +225,8 @@ uv sync
 この小型サーバーは Python MCP SDK v2 の typed tool registry を採用し、modern protocol と
 旧 initialize client の両方を stdio 契約テストで検証している。対応ホストでは
 `get_system_temperature` が外部通信なしの Body Signal MCP App を表示し、非対応ホストには
-同じ温度情報をテキストで返す。USB WebcamもSDK v2へ移行済みで、他サーバーは段階移行中。
+同じ温度情報をテキストで返す。USB WebcamとElevenLabs TTSもSDK v2へ移行済みで、
+他サーバーは段階移行中。
 
 > **注意**: WSL2 環境では温度センサーにアクセスできないため動作しません。
 

@@ -69,7 +69,7 @@ class ElevenLabsConfig:
             go2rtc_ffmpeg=os.getenv("GO2RTC_FFMPEG", "ffmpeg"),
             go2rtc_bin=os.getenv("GO2RTC_BIN") or None,
             go2rtc_config=os.getenv("GO2RTC_CONFIG") or None,
-            go2rtc_auto_start=_parse_bool(os.getenv("GO2RTC_AUTO_START"), True),
+            go2rtc_auto_start=_parse_bool(os.getenv("GO2RTC_AUTO_START"), False),
             go2rtc_camera_host=(
                 os.getenv("GO2RTC_CAMERA_HOST")
                 or os.getenv("TAPO_CAMERA_HOST")
