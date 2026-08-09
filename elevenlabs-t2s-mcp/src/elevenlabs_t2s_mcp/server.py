@@ -194,6 +194,7 @@ def _play_with_go2rtc(
     go2rtc_url: str,
     go2rtc_stream: str,
     go2rtc_ffmpeg: str,
+    api_credentials: tuple[str, str] | None = None,
 ) -> tuple[bool, str]:
     try:
         import json
@@ -203,7 +204,12 @@ def _play_with_go2rtc(
         src = f"ffmpeg:{abs_path}#audio=pcma#input=file"
         url = f"{go2rtc_url}/api/streams?dst={quote(go2rtc_stream, safe='')}&src={quote(src, safe='')}"
 
-        req = urllib.request.Request(url, method="POST", data=b"")
+        req = _go2rtc_request(
+            url,
+            method="POST",
+            data=b"",
+            api_credentials=api_credentials,
+        )
         with urllib.request.urlopen(req, timeout=10) as resp:
             body = json.loads(resp.read())
 
@@ -230,7 +236,11 @@ def _play_with_go2rtc(
                 time.sleep(0.5)
                 try:
                     status_url = f"{go2rtc_url}/api/streams"
-                    with urllib.request.urlopen(status_url, timeout=5) as r:
+                    status_request = _go2rtc_request(
+                        status_url,
+                        api_credentials=api_credentials,
+                    )
+                    with urllib.request.urlopen(status_request, timeout=5) as r:
                         streams = json.loads(r.read())
                     stream = streams.get(go2rtc_stream, {})
                     still_playing = False
@@ -246,6 +256,24 @@ def _play_with_go2rtc(
         return True, f"played via go2rtc → {go2rtc_stream}"
     except Exception as exc:
         return False, f"go2rtc failed: {exc}"
+
+
+def _go2rtc_request(
+    url: str,
+    *,
+    method: str = "GET",
+    data: bytes | None = None,
+    api_credentials: tuple[str, str] | None = None,
+):
+    """Build one optionally authenticated request for the go2rtc API."""
+    from .go2rtc import _api_request
+
+    return _api_request(
+        url,
+        method=method,
+        data=data,
+        api_credentials=api_credentials,
+    )
 
 
 def _play_audio(
@@ -349,6 +377,15 @@ class ElevenLabsTTSMCP:
         self._client = ElevenLabs(api_key=self._config.api_key)
         self._server = Server(self._server_config.name)
         self._go2rtc: "Go2RTCProcess | None" = None
+        self._go2rtc_api_credentials = (
+            (
+                self._config.go2rtc_api_username,
+                self._config.go2rtc_api_password,
+            )
+            if self._config.go2rtc_api_username
+            and self._config.go2rtc_api_password
+            else None
+        )
         self._setup_handlers()
 
     def _setup_handlers(self) -> None:
@@ -476,6 +513,7 @@ class ElevenLabsTTSMCP:
                         self._config.go2rtc_url,
                         self._config.go2rtc_stream,
                         self._config.go2rtc_ffmpeg,
+                        self._go2rtc_api_credentials,
                     )
                     camera_playback = cam_msg
 
@@ -509,10 +547,12 @@ class ElevenLabsTTSMCP:
             return
 
         # Step 2: Ensure config
+        environment = None
+        api_credentials = self._go2rtc_api_credentials
         if self._config.go2rtc_config:
             config_path = Path(self._config.go2rtc_config)
         elif self._config.go2rtc_camera_host and self._config.go2rtc_camera_password:
-            config_path = generate_config(
+            generated = generate_config(
                 config_path=default_config_path(),
                 stream_name=self._config.go2rtc_stream,
                 camera_host=self._config.go2rtc_camera_host,
@@ -520,17 +560,28 @@ class ElevenLabsTTSMCP:
                 password=self._config.go2rtc_camera_password,
                 ffmpeg_bin=self._config.go2rtc_ffmpeg,
             )
+            config_path = generated.path
+            environment = generated.environment
+            api_credentials = generated.api_credentials
         else:
             logger.warning("go2rtc: no config and no camera credentials, skipping auto-start")
             return
 
         # Step 3: Start process
         try:
-            self._go2rtc = Go2RTCProcess(bin_path, config_path, self._config.go2rtc_url)
+            self._go2rtc = Go2RTCProcess(
+                bin_path,
+                config_path,
+                self._config.go2rtc_url,
+                environment=environment,
+                api_credentials=api_credentials,
+            )
             await self._go2rtc.start()
+            self._go2rtc_api_credentials = api_credentials
         except Exception as exc:
             logger.warning("go2rtc failed to start: %s", exc)
             self._go2rtc = None
+            self._go2rtc_api_credentials = None
 
     async def run(self) -> None:
         try:

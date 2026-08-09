@@ -23,3 +23,6 @@ intentional version-and-digest change with tests, rather than an unreviewed
 runtime update through the mutable `latest` endpoint.
 
 `GO2RTC_BIN` remains the explicit escape hatch for an operator-managed binary.
+
+The managed process configuration and network boundary are documented in
+[go2rtc-runtime-security.md](./go2rtc-runtime-security.md).

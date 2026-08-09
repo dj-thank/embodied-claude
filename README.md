@@ -180,6 +180,11 @@ go2rtc の自動起動を使う場合、未指定の `GO2RTC_BIN` はversionとS
 `GO2RTC_BIN` に明示的なpathを設定する。詳細な環境変数は
 `elevenlabs-t2s-mcp/.env.example` を参照。
 
+Managed auto-start は `GO2RTC_URL` を loopback のport 1984に限定し、APIをrandom
+Basic authで保護する。camera credentialは生成YAMLへ書かず、go2rtc processへだけ渡す。
+API/RTSPはloopback bind、未使用のWebRTC/SRTP listenerは無効になる。外部管理のgo2rtcを
+使う場合は `GO2RTC_AUTO_START=false` とし、そのconfig・bind・authはoperatorが管理する。
+
 #### system-temperature-mcp(体温感覚)
 
 ```bash

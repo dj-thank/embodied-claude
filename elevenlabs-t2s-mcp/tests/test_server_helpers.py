@@ -1,10 +1,11 @@
 """Tests for pure ElevenLabs server helpers."""
 
+import base64
 from pathlib import Path
 
 import pytest
 
-from elevenlabs_t2s_mcp.server import _output_extension, _save_audio
+from elevenlabs_t2s_mcp.server import _go2rtc_request, _output_extension, _save_audio
 
 
 class TestAudioOutput:
@@ -25,3 +26,16 @@ class TestAudioOutput:
         assert file_path.parent == tmp_path
         assert file_path.suffix == ".mp3"
         assert file_path.read_bytes() == b"audio"
+
+
+def test_go2rtc_request_adds_basic_auth_without_putting_it_in_url() -> None:
+    request = _go2rtc_request(
+        "http://127.0.0.1:1984/api/streams",
+        method="POST",
+        data=b"",
+        api_credentials=("api-user", "api-password"),
+    )
+
+    token = base64.b64encode(b"api-user:api-password").decode("ascii")
+    assert request.full_url == "http://127.0.0.1:1984/api/streams"
+    assert request.get_header("Authorization") == f"Basic {token}"

@@ -1,26 +1,57 @@
 """Auto-download and manage go2rtc for audio backchannel."""
 
 import asyncio
+import base64
 import hashlib
+import ipaddress
 import json
 import logging
 import os
 import platform
+import secrets
 import shutil
+import socket
 import stat
 import subprocess
 import tempfile
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 logger = logging.getLogger(__name__)
 
 GO2RTC_VERSION = "v1.9.14"
 GITHUB_RELEASE_DOWNLOAD_URL = (
     f"https://github.com/AlexxIT/go2rtc/releases/download/{GO2RTC_VERSION}"
+)
+_CAMERA_USERNAME_ENV = "SANPOLOID_GO2RTC_USERNAME"
+_CAMERA_PASSWORD_ENV = "SANPOLOID_GO2RTC_PASSWORD"
+_API_USERNAME_ENV = "SANPOLOID_GO2RTC_API_USERNAME"
+_API_PASSWORD_ENV = "SANPOLOID_GO2RTC_API_PASSWORD"
+_MANAGED_API_LISTEN = "127.0.0.1:1984"
+_MANAGED_RTSP_LISTEN = "127.0.0.1:8554"
+_CHILD_ENV_ALLOWLIST = frozenset(
+    {
+        "APPDATA",
+        "COMSPEC",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LOCALAPPDATA",
+        "PATH",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "TZ",
+        "USERPROFILE",
+        "WINDIR",
+        "XDG_RUNTIME_DIR",
+    }
 )
 
 
@@ -32,6 +63,15 @@ class ReleaseArtifact:
     version: str
     url: str
     sha256: str
+
+
+@dataclass(frozen=True)
+class GeneratedGo2RTCConfig:
+    """Managed config plus process-only credentials, with secret-safe repr."""
+
+    path: Path
+    environment: Mapping[str, str] = field(repr=False)
+    api_credentials: tuple[str, str] = field(repr=False)
 
 
 # Digests published by AlexxIT/go2rtc for v1.9.14. Updating the version requires
@@ -295,6 +335,77 @@ def ensure_binary(bin_path: Path | None = None) -> Path:
     return bin_path
 
 
+def _yaml_string(value: str) -> str:
+    """Encode one dynamic value as a JSON-compatible YAML string scalar."""
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _normalize_camera_host(camera_host: str) -> str:
+    """Validate one host-only authority and normalize IP literals."""
+    candidate = camera_host.strip()
+    if not candidate or any(character.isspace() for character in candidate):
+        raise ValueError("camera host must be a non-empty host name or IP address")
+    if any(character in candidate for character in "/@?#"):
+        raise ValueError("camera host must not contain URL credentials, paths, or queries")
+
+    bracketed = candidate.startswith("[") and candidate.endswith("]")
+    address_candidate = candidate[1:-1] if bracketed else candidate
+    try:
+        address = ipaddress.ip_address(address_candidate)
+    except ValueError:
+        if bracketed or ":" in candidate:
+            raise ValueError("camera host contains an invalid IP address") from None
+        try:
+            ascii_hostname = candidate.encode("idna").decode("ascii")
+        except UnicodeError:
+            raise ValueError("camera host contains an invalid host name") from None
+        labels = ascii_hostname.rstrip(".").split(".")
+        if (
+            len(ascii_hostname) > 253
+            or any(
+                not label
+                or len(label) > 63
+                or label.startswith("-")
+                or label.endswith("-")
+                or any(not (character.isalnum() or character == "-") for character in label)
+                for label in labels
+            )
+        ):
+            raise ValueError("camera host contains an invalid host name")
+        return ascii_hostname
+
+    if isinstance(address, ipaddress.IPv6Address):
+        return f"[{address.compressed}]"
+    return address.compressed
+
+
+def _write_private_config_atomic(config_path: Path, content: str) -> None:
+    """Commit a private config without exposing partial contents."""
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{config_path.name}.",
+        suffix=".tmp",
+        dir=config_path.parent,
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        if os.name != "nt":
+            temporary_path.chmod(0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as file_handle:
+            descriptor = -1
+            file_handle.write(content)
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+        os.replace(temporary_path, config_path)
+        if os.name != "nt":
+            config_path.chmod(0o600)
+    except Exception:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary_path.unlink(missing_ok=True)
+        raise
+
+
 def generate_config(
     config_path: Path,
     stream_name: str,
@@ -302,75 +413,207 @@ def generate_config(
     username: str,
     password: str,
     ffmpeg_bin: str | None = None,
-) -> Path:
-    """Generate go2rtc.yaml config file."""
-    config_path.parent.mkdir(parents=True, exist_ok=True)
+) -> GeneratedGo2RTCConfig:
+    """Generate a private go2rtc config with process-only credentials."""
+    normalized_stream = stream_name.strip()
+    if not normalized_stream:
+        raise ValueError("stream name must not be empty")
+    if not username:
+        raise ValueError("camera username must not be empty")
+    if not password:
+        raise ValueError("camera password must not be empty")
+
+    normalized_host = _normalize_camera_host(camera_host)
     resolved_ffmpeg = ffmpeg_bin or "ffmpeg"
     encoded_username = quote(username, safe="")
     encoded_password = quote(password, safe="")
-    content = (
-        f"streams:\n"
-        f"  {stream_name}:\n"
-        f"    - rtsp://{encoded_username}:{encoded_password}@{camera_host}:554/stream1\n"
-        f"    - tapo://{encoded_password}@{camera_host}\n"
-        f"\n"
-        f"ffmpeg:\n"
-        f"  bin: {resolved_ffmpeg}\n"
-        f"\n"
-        f"api:\n"
-        f"  listen: \":1984\"\n"
-        f"\n"
-        f"log:\n"
-        f"  level: info\n"
+    api_username = secrets.token_urlsafe(18)
+    api_password = secrets.token_urlsafe(32)
+    environment = {
+        _CAMERA_USERNAME_ENV: encoded_username,
+        _CAMERA_PASSWORD_ENV: encoded_password,
+        _API_USERNAME_ENV: api_username,
+        _API_PASSWORD_ENV: api_password,
+    }
+    rtsp_source = (
+        f"rtsp://${{{_CAMERA_USERNAME_ENV}}}:${{{_CAMERA_PASSWORD_ENV}}}"
+        f"@{normalized_host}:554/stream1"
     )
-    config_path.write_text(content, encoding="utf-8")
-    if os.name != "nt":
-        config_path.chmod(0o600)
+    tapo_source = f"tapo://${{{_CAMERA_PASSWORD_ENV}}}@{normalized_host}"
+    content = (
+        "streams:\n"
+        f"  {_yaml_string(normalized_stream)}:\n"
+        f"    - {_yaml_string(rtsp_source)}\n"
+        f"    - {_yaml_string(tapo_source)}\n"
+        "\n"
+        "ffmpeg:\n"
+        f"  bin: {_yaml_string(resolved_ffmpeg)}\n"
+        "\n"
+        "api:\n"
+        f"  listen: {_yaml_string(_MANAGED_API_LISTEN)}\n"
+        f"  username: {_yaml_string('${' + _API_USERNAME_ENV + '}')}\n"
+        f"  password: {_yaml_string('${' + _API_PASSWORD_ENV + '}')}\n"
+        "  local_auth: true\n"
+        "  allow_paths:\n"
+        f"    - {_yaml_string('/api')}\n"
+        f"    - {_yaml_string('/api/streams')}\n"
+        "\n"
+        "rtsp:\n"
+        f"  listen: {_yaml_string(_MANAGED_RTSP_LISTEN)}\n"
+        "\n"
+        "webrtc:\n"
+        f"  listen: {_yaml_string('')}\n"
+        "\n"
+        "srtp:\n"
+        f"  listen: {_yaml_string('')}\n"
+        "\n"
+        "log:\n"
+        "  level: info\n"
+    )
+    _write_private_config_atomic(config_path, content)
     logger.info("go2rtc config written to %s", config_path)
-    return config_path
+    return GeneratedGo2RTCConfig(
+        path=config_path,
+        environment=environment,
+        api_credentials=(api_username, api_password),
+    )
+
+
+def _api_request(
+    url: str,
+    *,
+    method: str = "GET",
+    data: bytes | None = None,
+    api_credentials: tuple[str, str] | None = None,
+) -> urllib.request.Request:
+    """Build an API request without embedding Basic credentials in its URL."""
+    request = urllib.request.Request(url, method=method, data=data)
+    if api_credentials is not None:
+        username, password = api_credentials
+        token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode(
+            "ascii"
+        )
+        request.add_header("Authorization", f"Basic {token}")
+    return request
+
+
+def _is_managed_loopback_url(api_url: str) -> bool:
+    try:
+        parsed = urlsplit(api_url)
+        port = parsed.port
+    except ValueError:
+        return False
+    if (
+        parsed.scheme != "http"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+        or port != 1984
+    ):
+        return False
+    hostname = parsed.hostname
+    if hostname is None:
+        return False
+    if hostname.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
 
 
 class Go2RTCProcess:
     """Manage go2rtc daemon lifecycle."""
 
-    def __init__(self, bin_path: Path, config_path: Path, api_url: str = "http://localhost:1984"):
+    def __init__(
+        self,
+        bin_path: Path,
+        config_path: Path,
+        api_url: str = "http://localhost:1984",
+        *,
+        environment: Mapping[str, str] | None = None,
+        api_credentials: tuple[str, str] | None = None,
+    ):
+        if environment is not None:
+            if not _is_managed_loopback_url(api_url):
+                raise ValueError("managed go2rtc API URL must use loopback port 1984")
+            if api_credentials is None or not all(api_credentials):
+                raise ValueError("managed go2rtc API credentials are required")
+            if any(
+                not isinstance(name, str) or not isinstance(value, str)
+                for name, value in environment.items()
+            ):
+                raise TypeError("go2rtc environment names and values must be strings")
         self._bin_path = bin_path
         self._config_path = config_path
         self._api_url = api_url
+        self._environment = dict(environment) if environment is not None else None
+        self._api_credentials = api_credentials
         self._process: subprocess.Popen | None = None
 
+    def _child_environment(self) -> dict[str, str] | None:
+        if self._environment is None:
+            return None
+        child_environment = {
+            name: value
+            for name, value in os.environ.items()
+            if name.upper() in _CHILD_ENV_ALLOWLIST
+        }
+        child_environment.update(self._environment)
+        return child_environment
+
     def is_running(self) -> bool:
-        """Check if go2rtc is already responding."""
+        """Check whether the API responds with the configured credentials."""
         try:
-            req = urllib.request.Request(f"{self._api_url}/api", method="GET")
+            req = _api_request(
+                f"{self._api_url}/api",
+                api_credentials=self._api_credentials,
+            )
             with urllib.request.urlopen(req, timeout=2):
                 return True
         except Exception:
             return False
 
+    def _endpoint_is_occupied(self) -> bool:
+        """Check API port ownership without sending an HTTP request or credentials."""
+        try:
+            parsed = urlsplit(self._api_url)
+            hostname = parsed.hostname
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except ValueError:
+            return False
+        if hostname is None:
+            return False
+        try:
+            with socket.create_connection((hostname, port), timeout=2):
+                return True
+        except OSError:
+            return False
+
     async def start(self) -> None:
         """Start go2rtc as a background process."""
-        if self.is_running():
-            logger.info("go2rtc already running at %s", self._api_url)
-            return
+        if self._endpoint_is_occupied():
+            raise RuntimeError(
+                "go2rtc API is already responding; refusing to reuse an unowned service"
+            )
 
         self._process = subprocess.Popen(
             [str(self._bin_path), "-config", str(self._config_path)],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=self._child_environment(),
         )
         # Wait briefly and verify it started
         await asyncio.sleep(1.5)
 
         if self._process.poll() is not None:
-            stderr = self._process.stderr.read().decode() if self._process.stderr else ""
-            raise RuntimeError(f"go2rtc exited immediately: {stderr}")
+            return_code = self._process.returncode
+            raise RuntimeError(f"go2rtc exited immediately with code {return_code}")
 
         if not self.is_running():
-            stderr = ""
-            if self._process.stderr:
-                self._process.stderr.close()
-            self._process.terminate()
+            self._terminate_process()
             raise RuntimeError("go2rtc started but not responding")
 
         logger.info("go2rtc started (pid=%d)", self._process.pid)
@@ -380,6 +623,12 @@ class Go2RTCProcess:
         if self._process is None or self._process.poll() is not None:
             return
         logger.info("Stopping go2rtc (pid=%d)", self._process.pid)
+        self._terminate_process()
+
+    def _terminate_process(self) -> None:
+        """Terminate and reap the managed process."""
+        if self._process is None or self._process.poll() is not None:
+            return
         self._process.terminate()
         try:
             self._process.wait(timeout=5)

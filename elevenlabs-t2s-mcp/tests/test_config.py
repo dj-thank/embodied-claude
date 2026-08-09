@@ -3,6 +3,8 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 from elevenlabs_t2s_mcp.config import ElevenLabsConfig, _parse_bool
 
 
@@ -27,6 +29,8 @@ class TestElevenLabsConfigGo2rtc:
 
     @patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key"}, clear=False)
     def test_go2rtc_defaults(self):
+        os.environ.pop("GO2RTC_API_USERNAME", None)
+        os.environ.pop("GO2RTC_API_PASSWORD", None)
         config = ElevenLabsConfig.from_env()
         assert config.go2rtc_bin is None
         assert config.go2rtc_config is None
@@ -34,6 +38,8 @@ class TestElevenLabsConfigGo2rtc:
         assert config.go2rtc_camera_host is None
         assert config.go2rtc_camera_username is None
         assert config.go2rtc_camera_password is None
+        assert config.go2rtc_api_username is None
+        assert config.go2rtc_api_password is None
 
     @patch.dict(
         os.environ,
@@ -45,6 +51,8 @@ class TestElevenLabsConfigGo2rtc:
             "GO2RTC_CAMERA_HOST": "10.0.0.1",
             "GO2RTC_CAMERA_USERNAME": "admin",
             "GO2RTC_CAMERA_PASSWORD": "pass123",
+            "GO2RTC_API_USERNAME": "api-user",
+            "GO2RTC_API_PASSWORD": "api-password",
         },
         clear=False,
     )
@@ -56,6 +64,16 @@ class TestElevenLabsConfigGo2rtc:
         assert config.go2rtc_camera_host == "10.0.0.1"
         assert config.go2rtc_camera_username == "admin"
         assert config.go2rtc_camera_password == "pass123"
+        assert config.go2rtc_api_username == "api-user"
+        assert config.go2rtc_api_password == "api-password"
+
+    def test_go2rtc_api_auth_requires_complete_pair(self, monkeypatch):
+        monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
+        monkeypatch.setenv("GO2RTC_API_USERNAME", "api-user")
+        monkeypatch.delenv("GO2RTC_API_PASSWORD", raising=False)
+
+        with pytest.raises(ValueError, match="GO2RTC_API_USERNAME and GO2RTC_API_PASSWORD"):
+            ElevenLabsConfig.from_env()
 
     @patch.dict(
         os.environ,

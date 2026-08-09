@@ -38,6 +38,8 @@ class ElevenLabsConfig:
     pulse_sink: str | None
     pulse_server: str | None
     go2rtc_url: str | None
+    go2rtc_api_username: str | None
+    go2rtc_api_password: str | None
     go2rtc_stream: str
     go2rtc_ffmpeg: str
     go2rtc_bin: str | None
@@ -54,6 +56,13 @@ class ElevenLabsConfig:
         if not api_key:
             raise ValueError("ELEVENLABS_API_KEY environment variable is required")
 
+        go2rtc_api_username = os.getenv("GO2RTC_API_USERNAME") or None
+        go2rtc_api_password = os.getenv("GO2RTC_API_PASSWORD") or None
+        if (go2rtc_api_username is None) != (go2rtc_api_password is None):
+            raise ValueError(
+                "GO2RTC_API_USERNAME and GO2RTC_API_PASSWORD must be configured together"
+            )
+
         return cls(
             api_key=api_key,
             voice_id=os.getenv("ELEVENLABS_VOICE_ID", "uYp2UUDeS74htH10iY2e"),
@@ -65,6 +74,8 @@ class ElevenLabsConfig:
             pulse_sink=os.getenv("ELEVENLABS_PULSE_SINK") or None,
             pulse_server=_detect_pulse_server(),
             go2rtc_url=os.getenv("GO2RTC_URL") or None,
+            go2rtc_api_username=go2rtc_api_username,
+            go2rtc_api_password=go2rtc_api_password,
             go2rtc_stream=os.getenv("GO2RTC_STREAM", "tapo_cam"),
             go2rtc_ffmpeg=os.getenv("GO2RTC_FFMPEG", "ffmpeg"),
             go2rtc_bin=os.getenv("GO2RTC_BIN") or None,
