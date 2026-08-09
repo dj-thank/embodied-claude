@@ -148,9 +148,9 @@ Add to your `~/.claude.json`:
 
 The public surface uses the Python MCP SDK v2 typed registry for all 23 tools.
 Tests cover modern and legacy in-process clients plus a real stdio subprocess
-using the lightweight SQLite backend. The established behavior dispatcher is
-temporarily retained behind that typed boundary while it is decomposed in a
-later refactor.
+using the lightweight SQLite backend. The handwritten schemas are removed; the
+established behavior dispatcher is temporarily retained behind that typed
+boundary while it is decomposed in a later refactor.
 
 ```bash
 # Install dev dependencies

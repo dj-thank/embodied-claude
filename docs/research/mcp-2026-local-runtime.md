@@ -96,7 +96,7 @@ Memory MCPは23 toolの公開面をSDK v2 typed registryへ移行し、importanc
 範囲を生成schemaで制約した。modern/legacyのin-process Clientと、SQLiteを使う実stdio subprocessを含む
 252件がPASSし、action-policyの全53 tool分類も維持した。削除はoperator opt-in、短命な一回限りtoken、
 exact memory ID bindingを維持し、ToMへ渡す永続記憶は未信頼JSONとして隔離する。挙動回帰を抑えるため
-既存23分岐dispatcherは内部互換層として残しており、重複schemaと分岐の除去は次段階である。Chroma実装を
+手書きschemaは除去した。既存23分岐dispatcherは内部互換層として残しており、その分解は次段階である。Chroma実装を
 含むlocal suiteは検証したが、Claude Code / Desktop実ホスト接続と既存実データの移行は未検証である。
 
 ### MCP Apps pilot 実装状況（2026-08-09）
