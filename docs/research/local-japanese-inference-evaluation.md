@@ -26,10 +26,11 @@ llama.cppで同じrequest shapeが動くことは未検証である。
 
 ## 実装した評価境界
 
-- `japanese-core-v1`: exact phrase、単一label、短文要約、禁止語、JSONの5ケース
-- score: exact、必須語、禁止語、文字数、JSON構造の11個の決定的checkのmicro average
+- `japanese-core-v2`: v1の5ケースに、実失敗由来の固有名詞＋一文制約caseを追加した6ケース
+- score: exact、先頭語、必須語、禁止語、文字数、文数、JSON構造の16個の決定的checkのmicro average
 - prompt preset: `default`、`strict`、`concise`、`json`
 - JSON: `json` preset時だけbackendへJSON Schemaを渡す。schemaは16 KiBまで
+- invalid combination: `json` presetとschemaなしcaseの組合せは推論前に拒否する
 - JSON result: 有効JSONを`parsed_json`としてMCP structured contentへ返し、不正JSONはprotocol errorにする
 - CLI: presetとcaseを繰り返し指定し、JSON evidenceを保存できる
 - generation profile: `runtime_default`と、公式推奨値を送る評価専用`lfm2_5_jp`を同じ条件で比較できる
@@ -37,7 +38,7 @@ llama.cppで同じrequest shapeが動くことは未検証である。
 
 ## ローカル実測
 
-同一model、同一5ケース、`temperature=0.1`での一回測定:
+v1の同一model、同一5ケース、`temperature=0.1`での一回測定:
 
 | Preset | Score | Passed checks | Elapsed | 判断 |
 |---|---:|---:|---:|---|
@@ -48,7 +49,13 @@ llama.cppで同じrequest shapeが動くことは未検証である。
 `default`でもexact phraseは外側のかぎ括弧を残し、禁止された「雨」を出し、JSONをMarkdown
 code fenceで囲んだ。`strict`はexact phraseを別内容へ言い換え、総合点も悪化した。
 
-JSON専用caseを`json` presetと厳密schemaで再実行すると1 / 1 check、score 1.0、0.133秒で、
+v2では、過去の実MCP smokeで起きた「さんぽ→さっぽろ」と複数文出力を、主語prefix、必須語、
+禁止語、最大文数の5 checkへ固定した。曖昧だったpromptを「主語を『さんぽ』として」と明示した
+実機再評価では、この追加caseは`default`、`strict`、`concise`の全てで5 / 5 checkを通過した。
+全6ケースでは`default`が13 / 16（0.8125）、`strict`と`concise`が12 / 16（0.75）だった。
+exact転写、禁止語、自由JSONは引き続きFAILであり、一般品質PASSではない。
+
+v2のJSON専用caseを`json` presetと厳密schemaで再実行すると1 / 1 check、score 1.0、0.304秒で、
 `{"状態":"正常"}`と同値のJSONを得た。これは構造化出力ケースのlocal PASSであり、自由文全般の
 改善、複雑schema、連続負荷、llama.cpp互換性、他PCでの再現性を証明しない。
 
@@ -67,6 +74,8 @@ contentを確認した。入力はPowerShellの文字コード影響を避ける
 - `outputs/local-inference-eval-20260809.json`: 3 presetの全5ケース比較
 - `outputs/local-inference-eval-json-schema-20260809.json`: JSON専用caseのschema制約結果
 - `outputs/local-inference-eval-generation-profile-20260809.json`: sampling profile A/B、SHA-256 `C7252A13DA9DBE62CB08341DFDE131E850FB81CB097FC03DC82C637C83BCDCB5`
+- `outputs/local-inference-eval-japanese-core-v2-20260809.json`: v2の3 preset比較、SHA-256 `DD31AD1FD0FD5EE46EC2496C5525D474B7854A0505C1D44BEDE0C445FB3F1DDD`
+- `outputs/local-inference-eval-japanese-core-v2-json-20260809.json`: v2 JSON Schema case、SHA-256 `5565721F577578949AE6E34EFED33211CAE20196ADBDBFC54D27CB40F094DFCE`
 
 ## 次の判断
 

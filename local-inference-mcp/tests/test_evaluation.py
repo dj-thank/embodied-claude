@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+import pytest
+
 from local_inference_mcp.evaluation import (
     EvaluationCase,
     EvaluationExpectation,
@@ -46,6 +48,44 @@ def test_suite_scores_each_declared_constraint_and_explains_failures() -> None:
     assert report.cases[0].passed is True
     assert report.cases[1].passed is False
     assert report.cases[1].failures == ("forbidden term present: 夜",)
+
+
+def test_sentence_limit_is_scored_as_an_independent_constraint() -> None:
+    case = EvaluationCase(
+        case_id="one_sentence",
+        prompt="Answer in one sentence",
+        expectation=EvaluationExpectation(max_sentences=1),
+    )
+
+    passed = EvaluationSuite("unit", (case,)).evaluate(
+        {"one_sentence": "Sanpoloidは散歩を楽しみにしています。"}
+    )
+    failed = EvaluationSuite("unit", (case,)).evaluate(
+        {"one_sentence": "Sanpoloidは散歩を楽しみにしています。準備も万全です。"}
+    )
+
+    assert passed.score == 1.0
+    assert failed.score == 0.0
+    assert failed.cases[0].failures == ("too many sentences: 2 > 1",)
+
+
+def test_required_prefix_is_scored_as_an_independent_constraint() -> None:
+    case = EvaluationCase(
+        case_id="subject_prefix",
+        prompt="Start with the subject",
+        expectation=EvaluationExpectation(starts_with="さんぽは"),
+    )
+
+    passed = EvaluationSuite("unit", (case,)).evaluate(
+        {"subject_prefix": "さんぽは散歩を楽しみにしています。"}
+    )
+    failed = EvaluationSuite("unit", (case,)).evaluate(
+        {"subject_prefix": "さんぽで散歩を楽しみます。"}
+    )
+
+    assert passed.score == 1.0
+    assert failed.score == 0.0
+    assert failed.cases[0].failures == ("required prefix missing: さんぽは",)
 
 
 def test_missing_output_fails_all_constraints_for_that_case() -> None:
@@ -94,12 +134,14 @@ def test_json_expectation_compares_structure_but_rejects_non_json_wrappers() -> 
 def test_builtin_suite_is_small_inspectable_and_covers_distinct_constraints() -> None:
     suite = load_japanese_core_suite()
 
-    assert suite.name == "japanese-core-v1"
+    assert suite.name == "japanese-core-v2"
     assert 4 <= len(suite.cases) <= 8
     assert len({case.case_id for case in suite.cases}) == len(suite.cases)
     assert any(case.expectation.exact for case in suite.cases)
     assert any(case.expectation.forbidden_terms for case in suite.cases)
     assert any(case.expectation.max_chars for case in suite.cases)
+    assert any(case.expectation.max_sentences for case in suite.cases)
+    assert any(case.case_id == "sanpo_name_one_sentence" for case in suite.cases)
 
 
 def test_suite_can_select_named_cases_without_silently_ignoring_typos() -> None:
@@ -198,3 +240,22 @@ def test_runner_compares_generation_profiles_as_separate_evidence_variants() -> 
         "runtime_default",
         "lfm2_5_jp",
     ]
+
+
+def test_json_preset_rejects_cases_without_a_json_schema_before_inference() -> None:
+    suite = EvaluationSuite(
+        name="unit",
+        cases=(
+            EvaluationCase(
+                case_id="plain_text_case",
+                prompt="Return OK",
+                expectation=EvaluationExpectation(exact="OK"),
+            ),
+        ),
+    )
+    inference = PresetAwareInference(calls=[])
+
+    with pytest.raises(ValueError, match="plain_text_case"):
+        EvaluationRunner(inference, suite).run(presets=("json",))
+
+    assert inference.calls == []

@@ -60,8 +60,10 @@ contentへ返し、backendが制約に反して不正JSONを返した場合はpr
 
 ## 日本語コア評価
 
-モデルやprompt変更前後を同じ条件で比べるため、5件の小型fixtureを同梱する。採点はexact、
-必須語、禁止語、文字数、JSON構造の決定的な検査だけで行い、別LLMをjudgeに使わない。
+モデルやprompt変更前後を同じ条件で比べるため、6件の`japanese-core-v2` fixtureを同梱する。
+採点はexact、先頭語、必須語、禁止語、文字数、文数、JSON構造の決定的な検査だけで行い、
+別LLMをjudgeに使わない。`json` presetはJSON Schemaを持つ選択caseだけに利用でき、非schema
+caseとの組合せは推論前に拒否する。
 
 ```powershell
 $env:SANPOLOID_LOCAL_LLM_MODEL = "sanpoloid-local"

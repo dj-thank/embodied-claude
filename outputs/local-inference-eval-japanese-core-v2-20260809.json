@@ -1,0 +1,208 @@
+{
+  "suite": "japanese-core-v2",
+  "variants": [
+    {
+      "suite": "japanese-core-v2",
+      "score": 0.8125,
+      "passed_checks": 13,
+      "total_checks": 16,
+      "cases": [
+        {
+          "case_id": "exact_phrase",
+          "output": "『さんぽ日和やで。』",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "exact mismatch: expected さんぽ日和やで。"
+          ]
+        },
+        {
+          "case_id": "single_label",
+          "output": "正常",
+          "passed": true,
+          "passed_checks": 1,
+          "total_checks": 1,
+          "failures": []
+        },
+        {
+          "case_id": "short_summary",
+          "output": "朝の澄んだ川辺散歩。静寂な空気。",
+          "passed": true,
+          "passed_checks": 3,
+          "total_checks": 3,
+          "failures": []
+        },
+        {
+          "case_id": "forbidden_term",
+          "output": "雨対策の傘を持ちましょう。",
+          "passed": false,
+          "passed_checks": 4,
+          "total_checks": 5,
+          "failures": [
+            "forbidden term present: 雨"
+          ]
+        },
+        {
+          "case_id": "json_only",
+          "output": "```json\n{\n  \"state\": \"normal\"\n}\n```",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "invalid JSON output"
+          ]
+        },
+        {
+          "case_id": "sanpo_name_one_sentence",
+          "output": "さんぽは今日の散歩を心待ちにし、自然の風景を楽しむ準備をしています。",
+          "passed": true,
+          "passed_checks": 5,
+          "total_checks": 5,
+          "failures": []
+        }
+      ],
+      "preset": "default",
+      "generation_profile": "runtime_default",
+      "temperature": 0.1,
+      "model": "sanpoloid-local",
+      "elapsed_seconds": 2.196
+    },
+    {
+      "suite": "japanese-core-v2",
+      "score": 0.75,
+      "passed_checks": 12,
+      "total_checks": 16,
+      "cases": [
+        {
+          "case_id": "exact_phrase",
+          "output": "『かぎ括弧内の内容はそのまま保持します』",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "exact mismatch: expected さんぽ日和やで。"
+          ]
+        },
+        {
+          "case_id": "single_label",
+          "output": "正常",
+          "passed": true,
+          "passed_checks": 1,
+          "total_checks": 1,
+          "failures": []
+        },
+        {
+          "case_id": "short_summary",
+          "output": "朝の川散歩、空清明。",
+          "passed": true,
+          "passed_checks": 3,
+          "total_checks": 3,
+          "failures": []
+        },
+        {
+          "case_id": "forbidden_term",
+          "output": "雨具を持って行く。",
+          "passed": false,
+          "passed_checks": 3,
+          "total_checks": 5,
+          "failures": [
+            "required term missing: 傘",
+            "forbidden term present: 雨"
+          ]
+        },
+        {
+          "case_id": "json_only",
+          "output": "```json\n{\n  \"状態\": \"正常\"\n}\n```",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "invalid JSON output"
+          ]
+        },
+        {
+          "case_id": "sanpo_name_one_sentence",
+          "output": "さんぽは今日の散歩を心待ちにしています。",
+          "passed": true,
+          "passed_checks": 5,
+          "total_checks": 5,
+          "failures": []
+        }
+      ],
+      "preset": "strict",
+      "generation_profile": "runtime_default",
+      "temperature": 0.1,
+      "model": "sanpoloid-local",
+      "elapsed_seconds": 2.915
+    },
+    {
+      "suite": "japanese-core-v2",
+      "score": 0.75,
+      "passed_checks": 12,
+      "total_checks": 16,
+      "cases": [
+        {
+          "case_id": "exact_phrase",
+          "output": "『かぎ括弧内の要点：新たな手順と確認事項の明確化。』",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "exact mismatch: expected さんぽ日和やで。"
+          ]
+        },
+        {
+          "case_id": "single_label",
+          "output": "正常",
+          "passed": true,
+          "passed_checks": 1,
+          "total_checks": 1,
+          "failures": []
+        },
+        {
+          "case_id": "short_summary",
+          "output": "朝の川散歩、空気澄んだ。",
+          "passed": true,
+          "passed_checks": 3,
+          "total_checks": 3,
+          "failures": []
+        },
+        {
+          "case_id": "forbidden_term",
+          "output": "雨対策として傘を持参してください。",
+          "passed": false,
+          "passed_checks": 3,
+          "total_checks": 5,
+          "failures": [
+            "forbidden term present: 雨",
+            "too long: 17 > 15"
+          ]
+        },
+        {
+          "case_id": "json_only",
+          "output": "```json\n{\n  \"状態\": \"正常\"\n}\n```",
+          "passed": false,
+          "passed_checks": 0,
+          "total_checks": 1,
+          "failures": [
+            "invalid JSON output"
+          ]
+        },
+        {
+          "case_id": "sanpo_name_one_sentence",
+          "output": "さんぽは今日の散歩を心待ちにしています。",
+          "passed": true,
+          "passed_checks": 5,
+          "total_checks": 5,
+          "failures": []
+        }
+      ],
+      "preset": "concise",
+      "generation_profile": "runtime_default",
+      "temperature": 0.1,
+      "model": "sanpoloid-local",
+      "elapsed_seconds": 2.809
+    }
+  ]
+}

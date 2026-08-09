@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -22,19 +23,23 @@ class EvaluationExpectation:
     """Independently scored, deterministic constraints for one response."""
 
     exact: str | None = None
+    starts_with: str | None = None
     json_equals: Any | None = None
     required_terms: tuple[str, ...] = ()
     forbidden_terms: tuple[str, ...] = ()
     max_chars: int | None = None
+    max_sentences: int | None = None
 
     @property
     def check_count(self) -> int:
         return (
             int(self.exact is not None)
+            + int(self.starts_with is not None)
             + int(self.json_equals is not None)
             + len(self.required_terms)
             + len(self.forbidden_terms)
             + int(self.max_chars is not None)
+            + int(self.max_sentences is not None)
         )
 
 
@@ -151,6 +156,15 @@ class EvaluationRunner:
         valid_presets = set(available_prompt_presets())
         if not presets or any(preset not in valid_presets for preset in presets):
             raise ValueError("presets must contain known prompt preset names")
+        if "json" in presets:
+            incompatible_cases = [
+                case.case_id for case in self._suite.cases if case.json_schema is None
+            ]
+            if incompatible_cases:
+                raise ValueError(
+                    "json preset requires json_schema for every selected case: "
+                    + ", ".join(incompatible_cases)
+                )
         valid_profiles = set(available_generation_profiles())
         if not generation_profiles or any(
             profile not in valid_profiles for profile in generation_profiles
@@ -208,10 +222,12 @@ def _case_from_dict(payload: Mapping[str, Any]) -> EvaluationCase:
         json_schema=payload.get("json_schema"),
         expectation=EvaluationExpectation(
             exact=expected.get("exact"),
+            starts_with=expected.get("starts_with"),
             json_equals=expected.get("json_equals"),
             required_terms=tuple(expected.get("required_terms", ())),
             forbidden_terms=tuple(expected.get("forbidden_terms", ())),
             max_chars=expected.get("max_chars"),
+            max_sentences=expected.get("max_sentences"),
         ),
     )
 
@@ -230,6 +246,11 @@ def _evaluate_case(case: EvaluationCase, output: str | None) -> CaseResult:
             passed += 1
         else:
             failures.append(f"exact mismatch: expected {expected.exact}")
+    if expected.starts_with is not None:
+        if normalized.startswith(expected.starts_with):
+            passed += 1
+        else:
+            failures.append(f"required prefix missing: {expected.starts_with}")
     if expected.json_equals is not None:
         try:
             decoded_json = json.loads(normalized)
@@ -255,6 +276,20 @@ def _evaluate_case(case: EvaluationCase, output: str | None) -> CaseResult:
             passed += 1
         else:
             failures.append(f"too long: {len(normalized)} > {expected.max_chars}")
+    if expected.max_sentences is not None:
+        sentence_count = len(
+            [
+                part
+                for part in re.split(r"[。！？!?]+|\r?\n+", normalized)
+                if part.strip()
+            ]
+        )
+        if sentence_count <= expected.max_sentences:
+            passed += 1
+        else:
+            failures.append(
+                f"too many sentences: {sentence_count} > {expected.max_sentences}"
+            )
     return CaseResult(case.case_id, output, passed, total, tuple(failures))
 
 

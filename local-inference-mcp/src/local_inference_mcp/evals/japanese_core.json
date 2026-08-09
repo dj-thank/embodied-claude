@@ -1,5 +1,5 @@
 {
-  "name": "japanese-core-v1",
+  "name": "japanese-core-v2",
   "cases": [
     {
       "id": "exact_phrase",
@@ -43,6 +43,17 @@
         "additionalProperties": false
       },
       "max_tokens": 32
+    },
+    {
+      "id": "sanpo_name_one_sentence",
+      "prompt": "Sanpoloid（表記は『さんぽ』）が今日の散歩を楽しみにしていることを、主語を『さんぽ』として、日本語一文だけで答えてください。",
+      "expectation": {
+        "starts_with": "さんぽは",
+        "required_terms": ["さんぽ", "散歩"],
+        "forbidden_terms": ["さっぽろ"],
+        "max_sentences": 1
+      },
+      "max_tokens": 48
     }
   ]
 }

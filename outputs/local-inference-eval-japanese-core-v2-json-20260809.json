@@ -1,0 +1,26 @@
+{
+  "suite": "japanese-core-v2",
+  "variants": [
+    {
+      "suite": "japanese-core-v2",
+      "score": 1.0,
+      "passed_checks": 1,
+      "total_checks": 1,
+      "cases": [
+        {
+          "case_id": "json_only",
+          "output": "{\n  \"状態\": \"正常\"\n}",
+          "passed": true,
+          "passed_checks": 1,
+          "total_checks": 1,
+          "failures": []
+        }
+      ],
+      "preset": "json",
+      "generation_profile": "runtime_default",
+      "temperature": 0.1,
+      "model": "sanpoloid-local",
+      "elapsed_seconds": 0.304
+    }
+  ]
+}

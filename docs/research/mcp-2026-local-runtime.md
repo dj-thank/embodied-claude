@@ -14,7 +14,7 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
 - 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature、USB Webcam、ElevenLabs TTS、Wi-Fi Camera、Memoryはtyped registryへ移行した。Memoryは手書きschemaと旧routerを除去し、既存挙動をprivate dispatcherへ集約した段階である。
-- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、5 MCPのSDK v2実装後のテストは8パッケージ、計476件がPASSした。Memory変更範囲では253件、local inferenceは50件、action-policyは41件、Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーやcamera hardwareのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
+- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、5 MCPのSDK v2実装後のテストは8パッケージ、計479件がPASSした。Memory変更範囲では253件、local inferenceは53件、action-policyは41件、Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーやcamera hardwareのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
 
 ## 一次情報から確認した変更点
 
@@ -131,6 +131,9 @@ code fence付きになったJSONを、backendのJSON Schema制約では対象cas
 同じ8/11 checkだったため、公開MCP parameterや既定値には採用しなかった。
 JSON Schema成功応答は`parsed_json`としてstructured contentにも返すようにし、実LM Studio＋
 実MCP stdioで`{"状態":"正常"}`との一致を確認した。不正JSONはprotocol errorとして扱う。
+`japanese-core-v2`では実失敗由来の固有名詞・一文制約caseと決定的なprefix／文数checkを追加した。
+明確化したpromptで追加caseは3 presetとも5/5、全6ケースではdefault 13/16、strict／concise 12/16だった。
+また`json` presetとschemaなしcaseの無効な評価組合せは推論前に拒否する。
 
 Full profileにlocal inference選択を追加したWindows one-file installerも再ビルドした。
 最終EXEは36,466,696 bytes、SHA-256
