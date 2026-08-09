@@ -124,6 +124,31 @@ async def test_move_reconnects_after_transient_connection_failure(
 
 
 @pytest.mark.asyncio
+async def test_device_info_failure_is_redacted_and_propagated(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    camera = TapoCamera(_config())
+
+    class FailingDeviceService:
+        async def GetDeviceInformation(self) -> None:  # noqa: N802
+            raise RuntimeError(
+                "ONVIF failed at rtsp://camera-user:camera-secret@camera.local/live"
+            )
+
+    camera._connected = True
+    camera._cam = object()
+    camera._devicemgmt_service = FailingDeviceService()
+    caplog.set_level("ERROR", logger="wifi_cam_mcp.camera")
+
+    with pytest.raises(RuntimeError, match="ONVIF failed") as error:
+        await camera.get_device_info()
+
+    assert "camera-secret" not in str(error.value)
+    assert "rtsp://camera-user:<redacted>@camera.local/live" in str(error.value)
+    assert "camera-secret" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_move_returns_redacted_failure_after_reconnect_is_exhausted(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

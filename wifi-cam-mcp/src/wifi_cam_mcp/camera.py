@@ -301,7 +301,7 @@ class TapoCamera:
         try:
             image_data = await self._try_onvif_snapshot()
         except Exception as e:
-            onvif_error = str(e)
+            onvif_error = _redact_credentials(str(e))
 
         # Fall back to RTSP if ONVIF snapshot fails
         if image_data is None:
@@ -355,7 +355,7 @@ class TapoCamera:
             if image_bytes and len(image_bytes) > 0:
                 return image_bytes
         except Exception as e:
-            logger.debug("ONVIF snapshot failed: %s", e)
+            logger.debug("ONVIF snapshot failed: %s", _redact_credentials(str(e)))
         return None
 
     async def _capture_via_rtsp(self) -> bytes:
@@ -368,7 +368,10 @@ class TapoCamera:
         try:
             return await self._capture_rtsp_stream(self._get_rtsp_url(sub_stream=False))
         except Exception as e:
-            logger.info("Main stream (stream1) failed: %s, trying sub stream", e)
+            logger.info(
+                "Main stream (stream1) failed: %s, trying sub stream",
+                _redact_credentials(str(e)),
+            )
         return await self._capture_rtsp_stream(self._get_rtsp_url(sub_stream=True))
 
     async def _capture_rtsp_stream(self, rtsp_url: str) -> bytes:
@@ -552,7 +555,10 @@ class TapoCamera:
                     tilt = -tilt
                 return CameraPosition(pan=pan, tilt=tilt)
         except Exception as e:
-            logger.debug("Failed to get hardware position: %s", e)
+            logger.debug(
+                "Failed to get hardware position: %s",
+                _redact_credentials(str(e)),
+            )
         return None
 
     def reset_position_tracking(self) -> None:
@@ -640,8 +646,9 @@ class TapoCamera:
 
             return zeep.helpers.serialize_object(info, dict)
         except Exception as e:
-            logger.error("Failed to get device info: %s", e)
-            return {"error": str(e)}
+            message = _redact_credentials(str(e))
+            logger.error("Failed to get device info: %s", message)
+            raise RuntimeError(f"Failed to get device info: {message}") from e
 
     async def get_presets(self) -> list[dict]:
         """Get saved camera presets via ONVIF."""
@@ -653,8 +660,9 @@ class TapoCamera:
                 for p in (result or [])
             ]
         except Exception as e:
-            logger.error("Failed to get presets: %s", e)
-            return []
+            message = _redact_credentials(str(e))
+            logger.error("Failed to get presets: %s", message)
+            raise RuntimeError(f"Failed to get presets: {message}") from e
 
     async def go_to_preset(self, preset_id: str) -> MoveResult:
         """Move camera to a saved preset position via ONVIF."""
@@ -679,7 +687,7 @@ class TapoCamera:
                 direction=Direction.LEFT,
                 degrees=0,
                 success=False,
-                message=f"Failed to go to preset: {e!s}",
+                message=f"Failed to go to preset: {_redact_credentials(str(e))}",
             )
 
     # ------------------------------------------------------------------
@@ -786,4 +794,4 @@ class TapoCamera:
             result = await asyncio.to_thread(model.transcribe, audio_path, language="ja")
             return result.get("text", "").strip()
         except Exception as e:
-            return f"[Transcription failed: {e!s}]"
+            return f"[Transcription failed: {_redact_credentials(str(e))}]"

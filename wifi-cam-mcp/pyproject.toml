@@ -7,13 +7,14 @@ name = "wifi-cam-mcp"
 version = "0.1.0"
 description = "MCP server for controlling WiFi cameras (Tapo C210/C220) via ONVIF - Let AI look around your room!"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=2.0.0,<3",
     "onvif-zeep-async>=4.0.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.27.0",
     "Pillow>=10.0.0",
+    "pydantic>=2.0.0,<3",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +35,7 @@ packages = ["src/wifi_cam_mcp"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]

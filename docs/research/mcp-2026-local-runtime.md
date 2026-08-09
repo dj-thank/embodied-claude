@@ -13,8 +13,8 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - 既存5 MCPにlocal-inference MCPを加え、合計53ツールをaction policyが分類している。
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
-- 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature、USB Webcam、ElevenLabs TTSはtyped registryへ移行し、残るサーバーは段階移行中である。
-- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、USB Webcam／ElevenLabs TTS SDK v2実装後のテストは8パッケージ、計451件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
+- 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature、USB Webcam、ElevenLabs TTS、Wi-Fi Cameraはtyped registryへ移行し、Memory MCPが段階移行の残対象である。
+- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot、4 MCPのSDK v2実装後のテストは8パッケージ、計464件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、各MCPホスト、外部プロバイダーやcamera hardwareのE2Eを証明しない。USB Webcamについてはローカル実機の列挙のみ確認し、画像の取得・保存・表示は行っていない。
 
 ## 一次情報から確認した変更点
 
@@ -83,6 +83,14 @@ MCP errorとして返す。camera出力が未設定ならprovider生成前に停
 stdio subprocess、fake providerによる音声生成と一時directoryへの保存を40件のprovider-free testで確認した。実API、実音声再生、camera speakerは
 未検証である。`GO2RTC_URL`だけでmanaged binary取得・process起動を始めないよう、auto-start既定値を
 falseへ変更し、`GO2RTC_AUTO_START=true`を明示した場合だけ従来の自動起動を行う。
+
+Wi-Fi Camera MCPは基本10 toolとstereo 13 toolの手書きschema／23分岐dispatchをtyped decoratorへ
+置き換えた。右cameraが設定された場合だけstereo toolを登録し、action-policyの全53 tool分類を維持する。
+camera接続をMCP initialize前の必須処理から最初のtool callへ遅延し、offline cameraを指定した実stdio
+subprocessでもmodern/legacy双方がtool一覧を返せることを確認した。movement／stereo部分失敗とMCP tool境界へ伝播した例外は
+MCP errorとして返し、RTSP credentialを応答とlogからredactする。実cameraへの接続、撮影、PTZ移動、
+録音、Whisper文字起こしは未検証である。lock package recordは100から97になったが、disk/runtime
+memory削減を直接証明する値ではない。
 
 ### MCP Apps pilot 実装状況（2026-08-09）
 

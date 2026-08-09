@@ -134,6 +134,11 @@ cp .env.example .env
 # .env を編集してカメラのIP、ユーザー名、パスワードを設定(後述)
 ```
 
+Python MCP SDK v2のtyped registryを使い、基本10 toolと、右camera設定時だけ追加されるstereo 13 toolを
+公開する。camera接続は最初の操作まで遅延するため、cameraがofflineでもMCP hostはtool一覧を取得できる。
+`see`／`listen`等の観測とPTZ移動は既存action policyの確認対象であり、画像・音声は`CAPTURE_DIR`へ
+保存される。Whisper文字起こしを使う場合だけ`uv sync --extra transcribe`を選ぶ。
+
 ##### Tapo カメラの設定(ハマりやすいので注意):
 
 ###### 1. Tapo アプリでカメラをセットアップ

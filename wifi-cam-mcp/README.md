@@ -2,6 +2,10 @@
 
 Tapo C210などのWiFiカメラをMCP経由で制御して、AIに部屋を見渡してもらうためのサーバー。
 
+Python 3.12以上とPython MCP SDK v2のtyped registryを使用します。基本10 toolに加え、右cameraを
+設定した場合だけstereo 13 toolを公開します。MCP processはcameraがofflineでもinitializeでき、
+実際のONVIF接続は最初のcamera操作まで遅延します。
+
 ## 対応カメラ
 
 - TP-Link Tapo C210 (3MP)
@@ -73,6 +77,12 @@ TAPO_PASSWORD=your-password # Tapoカメラ(TP-Linkアカウントではない)�
 
 ```bash
 uv sync
+```
+
+音声文字起こしも使う場合だけ、重いWhisper依存を追加します。
+
+```bash
+uv sync --extra transcribe
 ```
 
 #### 動作確認
@@ -152,6 +162,9 @@ Claudeに話しかける:
 uv run --extra dev pytest
 ```
 
+自動試験はfake cameraとlocalhostの閉じたportを使い、実cameraへの接続、撮影、PTZ移動、録音は
+行いません。modern auto接続と旧initialize接続のin-process／stdio契約を検証します。
+
 ## トラブルシューティング
 
 ### カメラに接続できない
@@ -171,9 +184,11 @@ uv run --extra dev pytest
 
 ## 注意事項
 
-- **Python版**: pytapoは非公式ライブラリのため、TP-Linkの仕様変更で動作しなくなる可能性があります
+- Python実装はONVIFとRTSP/ffmpegを使用するため、camera firmwareやONVIF実装差で動作が変わる可能性があります
 - カメラはローカルネットワーク内からのみアクセス可能です
 - 認証情報(.envファイル)は絶対にGitにコミットしないでください
+- `see`／`look_around`は画像を、`listen`は音声を`CAPTURE_DIR`へ保存します。周辺環境と保存先を確認してください
+- MCP tool境界へ伝播したcamera例外とmovement失敗はMCP errorとして返し、RTSP URL内のpasswordは応答とlogからredactします
 
 ## ライセンス
 
