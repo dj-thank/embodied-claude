@@ -291,6 +291,7 @@ class MemoryStore:
         self._client: Any | None = None
         self._collection: chromadb.Collection | SQLiteCollection | None = None
         self._episodes_collection: chromadb.Collection | SQLiteCollection | None = None
+        self._ephemeral_collection_names: tuple[str, str] | None = None
         self._lock = asyncio.Lock()
         self._lifecycle_lock = asyncio.Lock()
         self._metadata_lock = asyncio.Lock()
@@ -304,6 +305,8 @@ class MemoryStore:
         """Initialize the selected backend and both logical collections."""
         async with self._lock:
             if self._client is None:
+                memory_collection_name = self._config.collection_name
+                episodes_collection_name = "episodes"
                 if self._config.backend == "sqlite":
                     self._client = await asyncio.to_thread(
                         SQLiteClient,
@@ -312,6 +315,13 @@ class MemoryStore:
                 elif self._config.db_path == ":memory:":
                     chroma = _load_chromadb()
                     self._client = await asyncio.to_thread(chroma.EphemeralClient)
+                    suffix = uuid.uuid4().hex
+                    memory_collection_name = f"memories-{suffix}"
+                    episodes_collection_name = f"episodes-{suffix}"
+                    self._ephemeral_collection_names = (
+                        memory_collection_name,
+                        episodes_collection_name,
+                    )
                 else:
                     chroma = _load_chromadb()
                     self._client = await asyncio.to_thread(
@@ -321,24 +331,33 @@ class MemoryStore:
                 # Phase 3: メインの記憶コレクション
                 self._collection = await asyncio.to_thread(
                     self._client.get_or_create_collection,
-                    name=self._config.collection_name,
+                    name=memory_collection_name,
                     metadata={"description": "Claude's long-term memories"},
                 )
                 # Phase 4: エピソード記憶コレクション
                 self._episodes_collection = await asyncio.to_thread(
                     self._client.get_or_create_collection,
-                    name="episodes",
+                    name=episodes_collection_name,
                     metadata={"description": "Episodic memories"},
                 )
 
     async def disconnect(self) -> None:
         """Close the configured storage backend."""
         async with self._lock:
-            if isinstance(self._client, SQLiteClient):
-                await asyncio.to_thread(self._client.close)
-            self._client = None
-            self._collection = None
-            self._episodes_collection = None
+            try:
+                if isinstance(self._client, SQLiteClient):
+                    await asyncio.to_thread(self._client.close)
+                elif self._client is not None and self._ephemeral_collection_names:
+                    for collection_name in self._ephemeral_collection_names:
+                        await asyncio.to_thread(
+                            self._client.delete_collection,
+                            name=collection_name,
+                        )
+            finally:
+                self._client = None
+                self._collection = None
+                self._episodes_collection = None
+                self._ephemeral_collection_names = None
 
     def _ensure_connected(self) -> chromadb.Collection | SQLiteCollection:
         """Ensure connected and return collection."""

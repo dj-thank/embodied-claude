@@ -167,6 +167,41 @@ class TestEpisodeSearch:
     """Test episode search."""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("backend", ["chroma", "sqlite"])
+    async def test_in_memory_episode_collections_do_not_leak_between_stores(
+        self, backend: str
+    ):
+        """An in-memory store owns its episode collection lifecycle."""
+        config = MemoryConfig(
+            db_path=":memory:",
+            collection_name="isolated_episode_memories",
+            backend=backend,
+        )
+        first_store = MemoryStore(config)
+        await first_store.connect()
+        memory = await first_store.save(content="first private episode")
+        first_manager = EpisodeManager(
+            first_store,
+            first_store.get_episodes_collection(),
+        )
+        await first_manager.create_episode(
+            title="First private episode",
+            memory_ids=[memory.id],
+        )
+        await first_store.disconnect()
+
+        second_store = MemoryStore(config)
+        await second_store.connect()
+        try:
+            second_manager = EpisodeManager(
+                second_store,
+                second_store.get_episodes_collection(),
+            )
+            assert await second_manager.list_all_episodes() == []
+        finally:
+            await second_store.disconnect()
+
+    @pytest.mark.asyncio
     async def test_search_episodes(self, memory_store, episode_manager):
         """Test searching episodes by query."""
         # Create memories and episode

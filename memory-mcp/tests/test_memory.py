@@ -35,6 +35,27 @@ class TestMemoryConnection:
         finally:
             await store.disconnect()
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("backend", ["chroma", "sqlite"])
+    async def test_in_memory_stores_do_not_share_records(self, backend: str):
+        """Each in-memory store owns an isolated lifecycle on every backend."""
+        config = MemoryConfig(
+            db_path=":memory:",
+            collection_name="isolated_memories",
+            backend=backend,
+        )
+        first = MemoryStore(config)
+        await first.connect()
+        saved = await first.save(content="first store private record")
+        await first.disconnect()
+
+        second = MemoryStore(config)
+        await second.connect()
+        try:
+            assert await second.get_by_ids([saved.id]) == []
+        finally:
+            await second.disconnect()
+
 
 class TestMemorySave:
     """Tests for save_memory."""

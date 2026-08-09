@@ -14,7 +14,7 @@ sanpo-loid はローカル LLM サーバーそのものではなく、Claude Cod
 - `.mcp.json`、インストーラー、README、各サーバーの依存関係が個別管理されている。インストーラーは ElevenLabs を扱わず、Wi-Fi 音声認識の optional extra も通常インストールでは入らない。
 - 初回監査時の Memory MCP は ChromaDB 必須で、クリーン環境では 98 パッケージを導入し、146 テストに約 150 秒かかった。機能は豊富だが Lite 構成の主要な重量源だった。
 - 初回監査時は各サーバーが MCP SDK v1 系の JSON schema と dispatch を手書きしていた。System Temperature は今回 typed registry へ移行し、残るサーバーは段階移行中である。
-- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot実装後のテストは8パッケージ、計414件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、実機、各MCPホスト、外部プロバイダーのE2Eを証明しない。
+- Runtime Profile、Memory Lite、SDK v2 / Apps、Local Inference pilot実装後のテストは8パッケージ、計418件がPASSし、各Ruffとlock検査もPASSした。これはローカル検証であり、実機、各MCPホスト、外部プロバイダーのE2Eを証明しない。
 
 ## 一次情報から確認した変更点
 
@@ -53,6 +53,11 @@ ChromaとSQLiteの両方で検証した。クリーンなSQLite構成は32パッ
 SQLiteの検索品質はembedding semantic searchと同等とは主張しない。
 Windows installer EXEは再ビルドし、ローカルで起動プロセスの生存まで確認したが、
 別PCへの配布・導入は未検証である。
+
+最終全suite再実行では、Chromaの`:memory:` storeがprocess-wide EphemeralClient上の固定名collectionを
+共有し、disconnect後もmemory/episode recordを次のstoreへ漏らす問題を再現した。storeごとの固有collectionを
+所有させ、disconnect時にそのin-memory collectionだけを削除するよう修正した。SQLiteとChromaのmain/episode
+両collectionをまたぐ4件の回帰試験を追加し、Memory全246件を再実行した。persistent Chromaのcollectionは削除しない。
 
 ### SDK v2 pilot 実装状況（2026-08-09）
 
