@@ -7,43 +7,201 @@ on:
     branches: [main]
 
 jobs:
-  test-memory-mcp:
-    name: Test memory-mcp
+  lint-all:
+    name: Lint ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - memory-mcp
+          - wifi-cam-mcp
+          - elevenlabs-t2s-mcp
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.15"
+
+      - name: Install dependencies (${{ matrix.package }})
+        working-directory: ${{ matrix.package }}
+        run: uv sync --extra dev
+
+      - name: Ruff (${{ matrix.package }})
+        working-directory: ${{ matrix.package }}
+        run: uv run ruff check .
+
+  memory-tests:
+    name: memory-mcp tests
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: memory-mcp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
-          version: "latest"
+          version: "0.11.15"
 
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Lint
-        run: uv run ruff check .
+      - name: Run tests
+        run: uv run pytest -q
+
+  elevenlabs-tests:
+    name: elevenlabs-t2s-mcp tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elevenlabs-t2s-mcp
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.15"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
 
       - name: Run tests
-        run: uv run pytest -v
+        run: uv run pytest -q
 
-  test-wifi-cam-mcp:
-    name: Test wifi-cam-mcp
+  wifi-tests:
+    name: wifi-cam-mcp tests
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: wifi-cam-mcp
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
-          version: "latest"
+          version: "0.11.15"
 
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Lint
-        run: uv run ruff check .
+      - name: Run tests
+        run: uv run pytest -q
+
+  smoke-imports:
+    name: Smoke import ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: usb-webcam-mcp
+            module: usb_webcam_mcp.server
+          - package: system-temperature-mcp
+            module: system_temperature_mcp.server
+          - package: installer
+            module: installer.main
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.15"
+
+      - name: Install dependencies (${{ matrix.package }})
+        working-directory: ${{ matrix.package }}
+        run: uv sync
+
+      - name: Import smoke (${{ matrix.module }})
+        working-directory: ${{ matrix.package }}
+        run: uv run python -c "import ${{ matrix.module }}; print('OK')"
+
+  docs-tool-consistency:
+    name: Docs tool consistency
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wifi-cam-mcp
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.15"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Validate docs and autonomous tool names
+        run: uv run python ../scripts/check_wifi_docs.py
+
+  shellcheck-lf:
+    name: Shellcheck + LF
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Enforce immutable external action references
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          violations = []
+          for path in sorted(Path(".github/workflows").glob("*.y*ml")):
+              for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                  match = re.search(r"\buses:\s*([^\s#]+)", line)
+                  if not match:
+                      continue
+                  target = match.group(1)
+                  if target.startswith(("./", "docker://")):
+                      continue
+                  _, separator, ref = target.rpartition("@")
+                  if not separator or not re.fullmatch(r"[0-9a-fA-F]{40}", ref):
+                      violations.append(f"{path}:{line_number}: {target}")
+          if violations:
+              raise SystemExit(
+                  "External actions must use immutable 40-character commit SHAs:\n"
+                  + "\n".join(violations)
+              )
+          print("All external action references are immutable.")
+          PY
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Shellcheck tracked scripts
+        run: |
+          mapfile -t scripts < <(git ls-files "*.sh")
+          if [ "${#scripts[@]}" -gt 0 ]; then
+            shellcheck "${scripts[@]}"
+          fi
+
+      - name: Enforce LF for tracked shell scripts
+        run: |
+          if git ls-files "*.sh" | xargs -r file | grep -E "CRLF"; then
+            echo "CRLF line endings are not allowed for shell scripts."
+            exit 1
+          fi
+
+  secrets-check:
+    name: Secrets check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  mirror-drift:
+    name: Mirror drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify mirror sync (best-effort)
+        run: bash scripts/check-mirror-sync.sh

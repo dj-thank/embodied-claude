@@ -40,6 +40,13 @@ def _output_extension(output_format: str) -> str:
     return output_format.split("_", 1)[0]
 
 
+def _is_voice_not_found_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "voice_not_found" in message or (
+        "voice_id" in message and "not found" in message and "voice" in message
+    )
+
+
 def _save_audio(audio_bytes: bytes, output_format: str, save_dir: str) -> str:
     os.makedirs(save_dir, exist_ok=True)
     ext = _output_extension(output_format)
@@ -346,7 +353,216 @@ class ElevenLabsTTSMCP:
         self._client = ElevenLabs(api_key=self._config.api_key)
         self._server = Server(self._server_config.name)
         self._go2rtc: "Go2RTCProcess | None" = None
+        self._cached_default_voice: tuple[str, str] | None = None
         self._setup_handlers()
+
+    def _pick_fallback_voice(
+        self, unavailable_voice_id: str | None = None
+    ) -> tuple[str, str] | None:
+        response = self._client.voices.get_all(show_legacy=True)
+        voices = getattr(response, "voices", None) or []
+        for voice in voices:
+            voice_id = (getattr(voice, "voice_id", "") or "").strip()
+            if not voice_id:
+                continue
+            if unavailable_voice_id and voice_id == unavailable_voice_id:
+                continue
+            voice_name = (getattr(voice, "name", "") or "").strip() or voice_id
+            return voice_id, voice_name
+        return None
+
+    async def _synthesize_once(
+        self,
+        *,
+        text: str,
+        voice_id: str,
+        model_id: str,
+        output_format: str,
+        play_audio: bool,
+        use_local: bool,
+    ) -> tuple[bytes, str, str]:
+        playback_mode = (self._config.playback or "auto").strip().lower()
+        use_streaming = (
+            play_audio
+            and use_local
+            and playback_mode in {"auto", "stream"}
+            and shutil.which("mpv") is not None
+        )
+
+        if use_streaming:
+            pulse_sink = self._config.pulse_sink
+            pulse_server = self._config.pulse_server
+            sentences = _split_sentences(text)
+            if len(sentences) > 1:
+                audio_bytes, playback = await asyncio.to_thread(
+                    _stream_sentences_with_mpv,
+                    self._client,
+                    sentences,
+                    voice_id,
+                    model_id,
+                    output_format,
+                    pulse_sink,
+                    pulse_server,
+                )
+            else:
+                audio_stream = await asyncio.to_thread(
+                    self._client.text_to_speech.stream,
+                    text=text,
+                    voice_id=voice_id,
+                    model_id=model_id,
+                    output_format=output_format,
+                )
+                audio_bytes, playback = await asyncio.to_thread(
+                    _stream_with_mpv,
+                    audio_stream,
+                    pulse_sink,
+                    pulse_server,
+                )
+            file_path = _save_audio(audio_bytes, output_format, self._config.save_dir)
+            return audio_bytes, file_path, playback
+
+        audio = await asyncio.to_thread(
+            self._client.text_to_speech.convert,
+            text=text,
+            voice_id=voice_id,
+            model_id=model_id,
+            output_format=output_format,
+        )
+        audio_bytes = _collect_audio_bytes(audio)
+        file_path = _save_audio(audio_bytes, output_format, self._config.save_dir)
+
+        playback = "skipped"
+        if play_audio and use_local:
+            playback = _play_audio(
+                audio_bytes,
+                file_path,
+                self._config.playback,
+                self._config.pulse_sink,
+                self._config.pulse_server,
+            )
+
+        return audio_bytes, file_path, playback
+
+    async def _synthesize_with_voice_fallback(
+        self,
+        *,
+        text: str,
+        voice_id: str,
+        model_id: str,
+        output_format: str,
+        play_audio: bool,
+        use_local: bool,
+    ) -> tuple[bytes, str, str, str, str | None]:
+        requested_voice_id = (voice_id or "").strip()
+        fallback_note: str | None = None
+
+        if requested_voice_id:
+            active_voice_id = requested_voice_id
+        else:
+            if self._cached_default_voice is None:
+                selected = await asyncio.to_thread(self._pick_fallback_voice, None)
+                if selected is None:
+                    raise RuntimeError(
+                        "No available ElevenLabs voices found. "
+                        "Set ELEVENLABS_VOICE_ID to a valid voice in your account."
+                    )
+                self._cached_default_voice = selected
+            active_voice_id, default_voice_name = self._cached_default_voice
+            fallback_note = (
+                "No voice_id was configured. "
+                f"Using available voice '{default_voice_name}' ({active_voice_id})."
+            )
+
+        try:
+            audio_bytes, file_path, playback = await self._synthesize_once(
+                text=text,
+                voice_id=active_voice_id,
+                model_id=model_id,
+                output_format=output_format,
+                play_audio=play_audio,
+                use_local=use_local,
+            )
+            return audio_bytes, file_path, playback, active_voice_id, fallback_note
+        except Exception as exc:
+            if not _is_voice_not_found_error(exc):
+                raise
+
+            selected = await asyncio.to_thread(self._pick_fallback_voice, active_voice_id)
+            if selected is None:
+                raise RuntimeError(
+                    f"voice_id '{active_voice_id}' was not found and no fallback voice is available. "
+                    "Set ELEVENLABS_VOICE_ID to a valid voice in your account."
+                ) from exc
+
+            fallback_voice_id, fallback_voice_name = selected
+            try:
+                audio_bytes, file_path, playback = await self._synthesize_once(
+                    text=text,
+                    voice_id=fallback_voice_id,
+                    model_id=model_id,
+                    output_format=output_format,
+                    play_audio=play_audio,
+                    use_local=use_local,
+                )
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    f"voice_id '{active_voice_id}' was not found and fallback voice "
+                    f"'{fallback_voice_name}' ({fallback_voice_id}) also failed: {fallback_exc}"
+                ) from fallback_exc
+
+            fallback_message = (
+                f"Requested voice '{active_voice_id}' was not found. "
+                f"Using fallback voice '{fallback_voice_name}' ({fallback_voice_id})."
+            )
+            if fallback_note:
+                fallback_message = f"{fallback_note}\n{fallback_message}"
+
+            return audio_bytes, file_path, playback, fallback_voice_id, fallback_message
+
+    def _resolve_speaker(self, requested_speaker: Any) -> tuple[str, str | None]:
+        """Resolve speaker target with sane fallback behavior."""
+        has_go2rtc = bool(self._config.go2rtc_url)
+        if isinstance(requested_speaker, str) and requested_speaker.strip():
+            speaker = requested_speaker.strip().lower()
+        else:
+            speaker = self._config.default_speaker
+
+        if speaker not in {"camera", "local", "both"}:
+            fallback_speaker = "camera" if has_go2rtc else "local"
+            note = (
+                f"Unknown speaker '{speaker}'. "
+                f"Using '{fallback_speaker}' instead."
+            )
+            return fallback_speaker, note
+
+        if speaker in {"camera", "both"} and not has_go2rtc:
+            return (
+                "local",
+                "Camera speaker requested but go2rtc is not configured. Using local speaker.",
+            )
+
+        return speaker, None
+
+    def _resolve_output_format(
+        self,
+        requested_output_format: Any,
+        speaker: str,
+    ) -> tuple[str, str | None]:
+        if isinstance(requested_output_format, str) and requested_output_format.strip():
+            return requested_output_format.strip(), None
+
+        if speaker in {"camera", "both"}:
+            camera_format = self._config.camera_output_format.strip()
+            if camera_format:
+                note = None
+                if camera_format != self._config.output_format:
+                    note = (
+                        "Using camera-oriented output format "
+                        f"'{camera_format}' for lower latency."
+                    )
+                return camera_format, note
+
+        return self._config.output_format, None
 
     def _setup_handlers(self) -> None:
         @self._server.list_tools()
@@ -381,7 +597,7 @@ class ElevenLabsTTSMCP:
                             },
                             "speaker": {
                                 "type": "string",
-                                "description": "Where to play: 'camera' (camera speaker only), 'local' (PC only), 'both' (default if go2rtc configured)",
+                                "description": "Where to play: 'camera' (camera speaker only), 'local' (PC only), 'both' (both outputs)",
                                 "enum": ["camera", "local", "both"],
                             },
                         },
@@ -401,69 +617,26 @@ class ElevenLabsTTSMCP:
 
             voice_id = arguments.get("voice_id") or self._config.voice_id
             model_id = arguments.get("model_id") or self._config.model_id
-            output_format = arguments.get("output_format") or self._config.output_format
             play_audio = arguments.get("play_audio", self._config.play_audio)
-            speaker = arguments.get("speaker") or ("both" if self._config.go2rtc_url else "local")
+            speaker, speaker_note = self._resolve_speaker(arguments.get("speaker"))
+            output_format, output_note = self._resolve_output_format(
+                arguments.get("output_format"),
+                speaker,
+            )
             use_local = speaker in {"local", "both"}
-            use_camera = speaker in {"camera", "both"} and self._config.go2rtc_url
+            use_camera = speaker in {"camera", "both"} and bool(self._config.go2rtc_url)
 
             try:
-                playback_mode = (self._config.playback or "auto").strip().lower()
-                use_streaming = (
-                    play_audio
-                    and use_local
-                    and playback_mode in {"auto", "stream"}
-                    and shutil.which("mpv") is not None
-                )
-
-                if use_streaming:
-                    pulse_sink = self._config.pulse_sink
-                    pulse_server = self._config.pulse_server
-                    sentences = _split_sentences(text)
-                    if len(sentences) > 1:
-                        audio_bytes, playback = await asyncio.to_thread(
-                            _stream_sentences_with_mpv,
-                            self._client,
-                            sentences,
-                            voice_id,
-                            model_id,
-                            output_format,
-                            pulse_sink,
-                            pulse_server,
-                        )
-                    else:
-                        audio_stream = await asyncio.to_thread(
-                            self._client.text_to_speech.stream,
-                            text=text,
-                            voice_id=voice_id,
-                            model_id=model_id,
-                            output_format=output_format,
-                        )
-                        audio_bytes, playback = await asyncio.to_thread(
-                            _stream_with_mpv, audio_stream,
-                            pulse_sink, pulse_server,
-                        )
-                    file_path = _save_audio(audio_bytes, output_format, self._config.save_dir)
-                else:
-                    audio = await asyncio.to_thread(
-                        self._client.text_to_speech.convert,
+                audio_bytes, file_path, playback, resolved_voice_id, voice_note = (
+                    await self._synthesize_with_voice_fallback(
                         text=text,
                         voice_id=voice_id,
                         model_id=model_id,
                         output_format=output_format,
+                        play_audio=play_audio,
+                        use_local=use_local,
                     )
-                    audio_bytes = _collect_audio_bytes(audio)
-                    file_path = _save_audio(audio_bytes, output_format, self._config.save_dir)
-
-                    playback = "skipped"
-                    if play_audio and use_local:
-                        playback = _play_audio(
-                            audio_bytes,
-                            file_path,
-                            self._config.playback,
-                            self._config.pulse_sink,
-                            self._config.pulse_server,
-                        )
+                )
 
                 camera_playback = "not configured"
                 if use_camera:
@@ -478,7 +651,7 @@ class ElevenLabsTTSMCP:
 
                 message = (
                     "Spoken via ElevenLabs\n"
-                    f"Voice: {voice_id}\n"
+                    f"Voice: {resolved_voice_id}\n"
                     f"Model: {model_id}\n"
                     f"Output: {output_format}\n"
                     f"File: {file_path}\n"
@@ -486,6 +659,13 @@ class ElevenLabsTTSMCP:
                     f"Playback: {playback}\n"
                     f"Camera: {camera_playback}"
                 )
+                notes = [
+                    note
+                    for note in (voice_note, speaker_note, output_note)
+                    if note
+                ]
+                if notes:
+                    message = "\n".join(notes) + f"\n{message}"
                 return [TextContent(type="text", text=message)]
             except Exception as exc:  # noqa: BLE001 - surface error to caller
                 return [TextContent(type="text", text=f"Error: {exc}")]

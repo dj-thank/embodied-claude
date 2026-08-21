@@ -22,6 +22,13 @@
 | [memory-mcp](./memory-mcp/) | 脳 | 長期記憶（セマンティック検索） | ChromaDB |
 | [system-temperature-mcp](./system-temperature-mcp/) | 体温感覚 | システム温度監視 | Linux sensors |
 
+## 運用ポリシー
+
+- 正本（source of truth）: `embodied-claude/`
+- 移行ミラー: `../embodied-claude-main/`（正本からの一方向同期）
+- 公式サポート環境: Linux / WSL2
+- 詳細: [`MIRROR_POLICY.md`](./MIRROR_POLICY.md)
+
 ## アーキテクチャ
 
 ```
@@ -157,6 +164,10 @@ cd elevenlabs-t2s-mcp
 uv sync
 cp .env.example .env
 # .env に ELEVENLABS_API_KEY を設定
+# ELEVENLABS_VOICE_ID は未設定でもOK（利用可能な声へ自動フォールバック）
+# C200 から低遅延で喋らせる場合:
+# ELEVENLABS_DEFAULT_SPEAKER=camera
+# ELEVENLABS_CAMERA_OUTPUT_FORMAT=ulaw_8000
 # WSLで音が出ない場合:
 # ELEVENLABS_PLAYBACK=paplay
 # ELEVENLABS_PULSE_SINK=1
@@ -174,7 +185,13 @@ uv sync
 
 ### 3. Claude Code 設定
 
-カレントディレクトリの `.mcp.json` に MCP サーバーを登録：
+テンプレートからローカル設定を作成：
+
+```bash
+cp .mcp.json.example .mcp.json
+```
+
+`.mcp.json` はローカル専用（コミットしない）で、内容は以下をベースに調整：
 
 ```json
 {
